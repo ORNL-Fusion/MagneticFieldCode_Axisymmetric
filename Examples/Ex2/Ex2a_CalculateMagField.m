@@ -39,7 +39,7 @@ coilSetup.r_inner =  coilSetup.r_inner - 0.5e-2;
  
 % =========================================================================
 % Assignment of currents per power supply:
-coilCurrents.TR1 = 600;
+coilCurrents.TR1 = 1600;
 coilCurrents.TR2 = 160;
 coilCurrents.PS1 = 4500;
 coilCurrents.PS2 = 4500;
