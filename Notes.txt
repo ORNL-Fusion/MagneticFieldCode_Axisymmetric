@@ -1,0 +1,24 @@
+Introduction:
+In this code package, we provide functions that enable the calculation of the 2D magnetic field profiles produced by an arbitray setup of axis symmetric coils
+
+Examples on how to use the codes can be found in the example folder and all the required functions can be found in the Functions folder.
+
+#####################################################################################
+CONTENTS
+#####################################################################################
+In this folder, we store codes that compute the magnetic field strength in 2D and the azimuhtal component of the magnetic vector potential of a set of circular coils.
+
+This code was developed from the efforts made by Rick Goulding and Jeremy Lore. These codes where developed in response to the following needs:
+- Prot-MPEX limiter experiments and the need to define the flux tubes
+- LDRD work on the GDT based fusion neutron source
+- Define the vacuum boundary for either Proto-MPEX or the GDT for the LDRD work
+
+Codes added to the MATLAB directory:
+2019_12_11
+
+######################################################################################
+EXAMPLES
+######################################################################################
+To demonstrate how to use the function, we have created a folder called "examples" where scripts can be run in order to illustrate the use of the functions
+
+
