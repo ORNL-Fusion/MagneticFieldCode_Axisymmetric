@@ -65,7 +65,7 @@ coilSetup
 tic
 z_Dump = 0.5;
 z_Target = 4.0344;
-r1D = linspace(1e-3,0.1  ,60 );
+r1D = linspace(1e-3,0.1  ,50 );
 z1D = linspace(z_Dump,4.5,501);
 
 % =========================================================================
@@ -180,9 +180,10 @@ vessel = AddComponent(vessel,space2);
 vessel = AddComponent(vessel,space3);
 vessel = AddComponent(vessel,heliconWindow);
 vessel = AddComponent(vessel,skimmer);
-vessel = AddComponent(vessel,limiter);
+vessel_wLim = AddComponent(vessel,limiter);
 
 vessel = SegmentBoundary(vessel,0.02);
+vessel_wLim = SegmentBoundary(vessel_wLim,0.02);
 
 figure;
 plot(vessel.z,vessel.r,'k.-')
@@ -203,15 +204,15 @@ switch limitType
         zlimit = z1D(nz);
         Phi0 = Phi2D(nz,nr);
     case 2 % Based on minimum flux at boundary
-        rng_ii = find(vessel.z > 0.5 & vessel.z < 3.7);
-        Phi_min = ones(size(vessel.z));
+        rng_ii = find(vessel_wLim.z > 0.5 & vessel_wLim.z < 3.7);
+        Phi_min = ones(size(vessel_wLim.z));
         for ii = rng_ii
-            [~,~,~,Phi_min(ii),~,~] = CalculateMagField(coil,vessel.z(ii),vessel.r(ii));
+            [~,~,~,Phi_min(ii),~,~] = CalculateMagField(coil,vessel_wLim.z(ii),vessel_wLim.r(ii));
         end
         [~,ii] = min(Phi_min);
-        rlimit = vessel.r(ii);
-        zlimit = vessel.z(ii);
-        nr = find(r1D > rlimit,1);
+        rlimit = vessel_wLim.r(ii);
+        zlimit = vessel_wLim.z(ii);
+        nr = find(r1D > rlimit,1,'first');
         nz = find(z1D > zlimit,1);
         Phi0 = Phi2D(nz,nr);
 end
@@ -219,10 +220,14 @@ end
 % Flux coordinate
 xi = Phi2D/Phi0;
 
+% Truncate Xi when > 1
+% dum1 = find(xi>1);
+% xi(dum1) = [-1];
+
 %% SECTION 4: MAGNETIC FIELD LINES AND PLASMA EDGE
 % =========================================================================
 % Magnetic field field lines up to the plasma edge
-xi_lines = linspace(0.01,1,20);
+xi_lines = linspace(1e-2,1,20);
 for ii = 1:numel(xi_lines)
     C = contour(z2D,r2D,xi,[1,1]*xi_lines(ii));
     z_fluxline{ii} = C(1,2:end);
@@ -230,11 +235,8 @@ for ii = 1:numel(xi_lines)
 end
 clearvars ii
 
-% Truncate Xi when > 1
-% dum1 = find(xi>1);
-% xi(dum1) = [-1];
 
-figure
+figure('color','w')
 hold on
 % Magnetic coils:
 for ii = 1:numel(coil)
@@ -251,11 +253,14 @@ for ii = 1:1:numel(xi_lines)
     end
 end
 
-plot(vessel.z,vessel.r,'k-')
+plot(vessel_wLim.z,vessel_wLim.r,'r','LineWidth',2)
+plot(vessel.z,vessel.r,'k-','LineWidth',2)
 plot(zlimit,rlimit,'ro')
 
 xlim([0,5  ])
 ylim([0,0.15])
+box on
+
 
 return
 
