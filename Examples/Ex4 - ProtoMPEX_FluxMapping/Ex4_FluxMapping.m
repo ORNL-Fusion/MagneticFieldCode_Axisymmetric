@@ -6,6 +6,8 @@
 % Written by J.F. Caneses Marin
 % Created on 2020-02-06
 
+% Master Branch
+
 %% SECTION 1: Read "CoilSetup" spreadsheet
 clearvars
 clc
