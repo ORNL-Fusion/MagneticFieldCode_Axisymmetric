@@ -12,18 +12,6 @@
 % CreateCoilStructure.m
 % bfield_circular_coil_analytic.m
 
-% Script has the following sections:
-% SECTION 1: Create "coil" structure
-% SECTION 2: Calculate magnetic field
-% SECTION 3: REFERENCE FLUX
-% SECTION 4: MAGNETIC FIELD LINES AND PLASMA EDGE
-% SECTION 5: DEFINE PLASMA DENSITY and Te 2D PROFILE
-% SECTION 6: Generate Vacuum boundary
-% SECTION 7: Cyclotron resonance contours
-% SECTION 8: Plot data
-% SECTION 9: Save figure
-% SECTION 10: Save data
-
 %% SECTION 1: Create "coil" structure
 % =========================================================================
 clearvars
@@ -75,7 +63,7 @@ coilCurrents.transition  = +10e3; % Transition coils
 % Create "coil" structure: 
 % Based on "coilSetup" and "coilCurrents", we produce a structure called
 % "coil" for each physical coil. The "coil" structure contains the position
-% of each current filament loop, power supply current and current per loop.
+% of each current filament loop, power supply current.
 
 disp('Creating "coil" structure...')
 [coil] = CreateCoilStructure(coilSetup,coilCurrents);
@@ -120,7 +108,7 @@ clearvars dum*
 % magnetic field magnitude:
 B2D = sqrt(Br2D.*Br2D  + Bz2D.*Bz2D);
 toc
-%% SECTION 3: REFERENCE FLUX
+%% SECTION 4: REFERENCE FLUX
 % =========================================================================
 % Define reference flux
 limitType = 2;
@@ -142,7 +130,7 @@ end
 % Flux coordinate
 xi = Phi2D/Phi0;
 
-%% SECTION 4: MAGNETIC FIELD LINES AND PLASMA EDGE
+%% SECTION 5: MAGNETIC FIELD LINES AND PLASMA EDGE
 % =========================================================================
 % Magnetic field field lines up to the plasma edge
 xi_lines = [0.01:0.1:1];
@@ -157,7 +145,7 @@ clearvars ii
 dum1 = find(xi>1);
 xi(dum1) = [-1];
 
-%% SECTION 5: DEFINE PLASMA DENSITY and Te 2D PROFILE
+%% SECTION 6: DEFINE PLASMA DENSITY and Te 2D PROFILE
 % =========================================================================
 % Define the radial plasma density and Te profile:
 a = 2;
@@ -230,7 +218,7 @@ if 1
     xlabel('z [m]','Interpreter','latex','FontSize',14)
 end
 
-%% SECTION 6: Generate Vacuum boundary
+%% SECTION 7: Generate Vacuum boundary
 % =========================================================================
 % Define boundary:
 vessel.z = [0  ,5.5,6.5,7.0,8.5,10.0,10.0];
@@ -242,7 +230,7 @@ vessel_mirror.z = -fliplr(vessel.z);
 vessel_mirror.r = +fliplr(vessel.r);
 vessel = AddComponent(vessel,vessel_mirror);
 
-%% SECTION 7: Cyclotron resonance contours
+%% SECTION 8: Cyclotron resonance contours
 % RF frequency:
 f_RF = [11]*1e6;
 % Ion mass:
@@ -257,7 +245,7 @@ dum1 = contour(z2D,r2D,B2D,[1,1]*B_res);
 z_resLayer = dum1(1,2:end);
 r_resLayer = dum1(2,2:end);
 
-%% SECTION 8: Plot data
+%% SECTION 9: Plot data
 % close all
 % =========================================================================
 % Plot magnetic field profile:
@@ -324,7 +312,7 @@ if 0
     axis('image')
 end
 
-%% SECTION 9: Save figure
+%% SECTION 10: Save figure
 % =========================================================================
 % Saving figure:
 InputStructure.prompt = {['Would you like to save Figure? Yes [1], No [0]']};
@@ -344,7 +332,7 @@ if saveFig
    disp('figures saved succesfully!')
 end
 
-%% SECTION 10: Save data
+%% SECTION 11: Save data
 % =========================================================================
 % Saving data:
 % r2D: 

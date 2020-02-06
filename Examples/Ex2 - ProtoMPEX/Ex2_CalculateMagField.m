@@ -1,16 +1,21 @@
-% In this script, I illustrate the use of the functions:
-% "CreateCoilStructure"
-% "CalculateMagneticField"
-% In order to calculate the 2D magnetic field produced by a set of circular
-% coils in an axisymmetric arrangement.
+% OBJECTIVE:
+% 1- Demonstrate the use of the functions: "CreateCoilStructure" and
+% "CalculateMagneticField" to calculate the magnetic field on Proto-MPEX
+% along the 
+% 2- Demonstrate the use of the "CoilSetup" spreadsheet
+% 3- Verify the numerical implementation against calculations from other
+% codes.
 
-% The coil arrangement and geometrical information is recored in a
+% COIL GEOMETRY INFORMATION:
+% The coil arrangement and geometrical information is recorDed in a
 % spreadsheet called "CoilSetup_ProtoMPEX".
 
-% We also compare the resulting calculation with a
+% VERIFICATION EXERCISE:
+% The magnetic field in Proto-MPEX is calculated and compared with
 % previosly calculated magnetic field based on Jeremy Lore's code.
-% The comparison indicates that the newly developed magnetic field code
-% succesfully replicates the results from Jeremy' code
+
+% Written by J.F. Caneses Marin
+% Created on 2019-12-19
 
 %% SECTION 1: Read "CoilSetup" spreadsheet
 clearvars
@@ -51,6 +56,19 @@ disp('Creating "coil" structure...')
 disp(['Complete! Elapsed time: ',num2str(toc(dum1)),' s'])
 clearvars dum*
 
+% =========================================================================
+% Display "coilSetup" on CLI:
+coilSetup
+
+% #########################################################################
+% IMPORTANT QUANTITIES FROM THIS SECTION:
+% #########################################################################
+% - coilSetup: structure that contains all the geometrical info of the
+% coils
+% - coilCurrents: strucuture that contains the power supply currents
+% - coil: object that describes the specific coil setup and is the input
+% for the magnetic field calculator function
+
 %% SECTION 2: Calculate magnetic field
 % =========================================================================
 % Define the area to evaluate the fields at:
@@ -79,7 +97,7 @@ d = load(fileName);
 z_Bjl = d(:,1);
 Bjl   = d(:,2);
 
-%% SECTION 4: Plot data
+%% SECTION 4: verification, plot data
 close all
 % =========================================================================
 % Compare present calculation and Jeremy's code:

@@ -102,6 +102,10 @@ coilSetup.layers_r = coilSetup.layers_r(b);
 
 %% Test
 % =========================================================================
+% Here we plot the location of the finite size coils and we use the
+% filamentary current loop model to calculate the magnetic field profile to
+% provide a quick check for the correct position of the coils
+
 % Test prompt:
 InputStructure.prompt = {['Test "coilSetup"?, Yes [1], No [0]']};
 testCoils = GetUserInput(InputStructure);
@@ -141,6 +145,7 @@ if testCoils
 
     % ---------------------------------------------------------------------
     % Plot data:
+    figureName = 'Testing Coil setup';
     figure('color','w'); 
     hold on
     for ii = 1:numel(coil)
