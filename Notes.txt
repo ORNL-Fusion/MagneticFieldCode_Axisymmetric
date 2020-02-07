@@ -9,7 +9,7 @@ CONTENTS
 In this folder, we store codes that compute the magnetic field strength in 2D and the azimuhtal component of the magnetic vector potential of a set of circular coils.
 
 This code was developed from the efforts made by Rick Goulding and Jeremy Lore. These codes where developed in response to the following needs:
-- Prot-MPEX limiter experiments and the need to define the flux tubes
+- Proto-MPEX limiter experiments and the need to define the flux tubes
 - LDRD work on the GDT based fusion neutron source
 - Define the vacuum boundary for either Proto-MPEX or the GDT for the LDRD work
 
