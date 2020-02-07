@@ -28,7 +28,7 @@ confType = 'conf_G';
 
 % Assignment of currents per power supply:
 % =========================================================================
-limitType = 2;
+limitType = 3;
 switch limitType
     case 1 % MPEX-like limiter
         coilCurrents.TR1 = 530;
@@ -39,9 +39,15 @@ switch limitType
     case 2 % Window limiter
         coilCurrents.TR1 = 530;
         coilCurrents.TR2 = 2300;
-        coilCurrents.PS1 = 6000;
+        coilCurrents.PS1 = 6500;
         coilCurrents.PS2 = 4000;
         coilCurrents.PS3 = 220;
+    case 3 % Upstream vaccum vessel limiter
+        coilCurrents.TR1 = 0;
+        coilCurrents.TR2 = 2300;
+        coilCurrents.PS1 = 5000;
+        coilCurrents.PS2 = 4000;
+        coilCurrents.PS3 = 350;
 end
 
 % =========================================================================
@@ -145,6 +151,7 @@ for ii = 1:numel(xi_lines)
     z_fluxline{ii} = C(1,2:end);
     r_fluxline{ii} = C(2,2:end);
 end
+close(gcf)
 clearvars ii
 
 %% SECTION 5: Plot data
