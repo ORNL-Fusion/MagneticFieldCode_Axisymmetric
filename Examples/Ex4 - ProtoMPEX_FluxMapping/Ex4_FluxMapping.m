@@ -6,7 +6,7 @@
 % Written by J.F. Caneses Marin
 % Created on 2020-02-06
 
-% Master Branch
+% evalContour Branch
 
 %% SECTION 1: Read "CoilSetup" spreadsheet
 clearvars
@@ -24,21 +24,31 @@ cd(homeFolder)
  
 % =========================================================================
 % Magnetic configuration of interest:
-protoMpexConf = 'conf_G';
+confType = 'conf_G';
 
 % Assignment of currents per power supply:
 % =========================================================================
-coilCurrents.TR1 = 530;
-coilCurrents.TR2 = 2300;
-coilCurrents.PS1 = 5000;
-coilCurrents.PS2 = 4000;
-coilCurrents.PS3 = 430;
+limitType = 2;
+switch limitType
+    case 1 % MPEX-like limiter
+        coilCurrents.TR1 = 530;
+        coilCurrents.TR2 = 2300;
+        coilCurrents.PS1 = 5000;
+        coilCurrents.PS2 = 4000;
+        coilCurrents.PS3 = 430;
+    case 2 % Window limiter
+        coilCurrents.TR1 = 530;
+        coilCurrents.TR2 = 2300;
+        coilCurrents.PS1 = 6000;
+        coilCurrents.PS2 = 4000;
+        coilCurrents.PS3 = 220;
+end
 
 % =========================================================================
 % Read "CoilSetup" spreadsheet:
 dum1 = tic;
 disp('Reading "coilSetup" spreadsheet...')
-coilSetup = readtable('CoilSetup_ProtoMPEX.xlsx','Sheet',protoMpexConf);
+coilSetup = readtable('CoilSetup_ProtoMPEX.xlsx','Sheet',confType);
 disp('Reading complete!')
 
 % =========================================================================
@@ -66,15 +76,15 @@ coilSetup
 % Define the area to evaluate the fields at:
 tic
 z_Dump = 0.5;
-z_Target = 4.0344;
-r1D = linspace(1e-3,0.1  ,50 );
-z1D = linspace(z_Dump,4.5,501);
+z_Target = 4.2;
+r1D = linspace(1e-3,0.1  ,30 );
+z1D = linspace(z_Dump,z_Target,300);
 
 % =========================================================================
 % Calculate the magnetic field and magnetic vector potential:
 dum1 = tic;
 disp('Calculating magnetic field...')
-[Br2D,Bz2D,Atheta2D,Phi2D,z2D,r2D] = CalculateMagField(coil,z1D,r1D);
+[Br2D,Bz2D,~,phi2D,z2D,r2D] = CalculateMagField(coil,z1D,r1D,'grid');
 disp(['Complete! Elapsed time: ',num2str(toc(dum1)),' s'])
 clearvars dum*
 
@@ -84,113 +94,10 @@ B2D = sqrt(Br2D.*Br2D  + Bz2D.*Bz2D);
 toc
 
 %% Draw Proto-MPEX vacuum vessel:
-% Inch to meter conversion factor
-in2m = 0.0254;
-
-% Dump plate geometry:
-rDump = 15.75*in2m/2;
-zDump = 0.5;
-
-% Central chamber:
-zCC1 = coil{6}.z + 0.5*coil{6}.dz;
-zCC2 = coil{7}.z - 0.5*coil{7}.dz;
-rCC  = 24*in2m/2;
-
-% Vaccum vessel:
-rVac1 = 5.834*in2m/2; % Vacuum vessel rad that is on either side of ALN window
-rVac2a = 19.25*in2m/2; % Wide sections dowmstream of central chamber to end
-rVac2b = 4.272*2*in2m/2;  % Narrow sections are just inside of coil
-zVac1  = zCC1;
-zVac2a = zCC2;
-zVac2b = coil{end}.z + 0.5*coil{end}.dz;
-
-% Helicon window:
-L =  11.8*in2m; % L is 11.8" from Meitner
-r1 = 4.95*in2m/2; % diameter is 5.1 inches --> update 4/21/16.  Nominal is ~4.95;
-r2 = rVac1;
-z1 = 0.5*(coil{3}.z + coil{4}.z) - L/2;
-z2 = 0.5*(coil{3}.z + coil{4}.z) + L/2;
-heliconWindow.r = [r2,r1,r1,r2];
-heliconWindow.z = [z1,z1,z2,z2];
-
-% MPEX-like limiter:
-limiterLength = 30e-2;
-limiterWidth  = 3e-3;
-z1 = heliconWindow.z(end) + 1e-2;
-z2 = z1 + limiterLength;
-r1 = 2.5*in2m - limiterWidth;
-r2 = rVac1;
-
-limiter.r = [r2,r1,r1,r2];
-limiter.z = [z1,z1,z2,z2];
-
-% Skimmer:
-r1 = (7/100)/2;
-r2 = rVac1;
-z1 = coil{5}.z + 0.0702 - 0.5e-2;
-z2 = coil{5}.z + 0.0702 + 0.5e-2;
-skimmer.r = [r2,r1,r1,r2];
-skimmer.z = [z1,z1,z2,z2];
-
-% ECH heating region:
-r1 = rVac2b;
-r2 = rVac2a;
-z1 = coil{8}.z + 0.5*coil{8}.dz;
-z2 = coil{9}.z - 0.5*coil{9}.dz;
-echSection.r = [r1,r2,r2,r1];
-echSection.z = [z1,z1,z2,z2];
-
-% ICH Sleeve: -------------------------------------------------------------
-r1 = rVac2b;
-r2 = 0.08/2; % ID = 80 mm
-z1 = coil{09}.z - 0.5*coil{09}.dz;
-z2 = coil{10}.z + 0.5*coil{10}.dz;
-ichSleeve.r = [r1,r2,r2,r1];
-ichSleeve.z = [z1,z1,z2,z2];
-
-% Space between coil 10-11
-r1 = rVac2b;
-r2 = rVac2a;
-z1 = coil{10}.z + 0.5*coil{10}.dz;
-z2 = coil{11}.z - 0.5*coil{11}.dz;
-space1.r = [r1,r2,r2,r1];
-space1.z = [z1,z1,z2,z2];
-
-% Space between coil 11-12
-r1 = rVac2b;
-r2 = rVac2a;
-z1 = coil{11}.z + 0.5*coil{11}.dz;
-z2 = coil{12}.z - 0.5*coil{12}.dz;
-space2.r = [r1,r2,r2,r1];
-space2.z = [z1,z1,z2,z2];
-
-% Space between coil 12-13
-r1 = rVac2b;
-r2 = rVac2a;
-z1 = coil{12}.z + 0.5*coil{12}.dz;
-z2 = coil{13}.z - 0.5*coil{13}.dz;
-space3.r = [r1,r2,r2,r1];
-space3.z = [z1,z1,z2,z2];
-
-vessel.r = [0    ,rDump,rDump    ,rVac1     ,rVac1,rCC  ,rCC   ,rVac2b,rVac2b];
-vessel.z = [zDump,zDump,zDump+0.2,zDump+0.2 ,zVac1,zVac1,zVac2a,zVac2a,zVac2b];
-
-vessel = AddComponent(vessel,echSection);
-vessel = AddComponent(vessel,ichSleeve);
-vessel = AddComponent(vessel,space1);
-vessel = AddComponent(vessel,space2);
-vessel = AddComponent(vessel,space3);
-vessel = AddComponent(vessel,heliconWindow);
-vessel = AddComponent(vessel,skimmer);
-vessel_wLim = AddComponent(vessel,limiter);
-
-vessel = SegmentBoundary(vessel,0.02);
-vessel_wLim = SegmentBoundary(vessel_wLim,0.02);
-
-figure;
-plot(vessel.z,vessel.r,'k.-')
-xlim([0,5])
-ylim([0,1])
+if ~strcmpi(confType,'conf_G')
+    error('Change "confType" to config_G')
+end
+DrawVacuumVessel_Conf_G
 
 %% SECTION 3: Calculate reference flux:
 % =========================================================================
@@ -204,32 +111,35 @@ switch limitType
         [~,a] = min(Bz2D(rng_z,nr));
         nz = rng_z(a);
         zlimit = z1D(nz);
-        Phi0 = Phi2D(nz,nr);
-    case 2 % Based on minimum flux at boundary
+        phi0 = phi2D(nz,nr);
+    case 2 % Based on phi at vacuum vessel boundary
+        % Select region of interest:
         rng_ii = find(vessel_wLim.z > 0.5 & vessel_wLim.z < 3.7);
-        Phi_min = ones(size(vessel_wLim.z));
-        for ii = rng_ii
-            [~,~,~,Phi_min(ii),~,~] = CalculateMagField(coil,vessel_wLim.z(ii),vessel_wLim.r(ii));
-        end
-        [~,ii] = min(Phi_min);
+        % Initialize variable:
+        phiBoundary = ones(size(vessel_wLim.z));
+        % Interpolate phi along vaccum vessel contour
+        zq = vessel_wLim.z(rng_ii);
+        rq = vessel_wLim.r(rng_ii);
+        a = interp2(z1D,r1D,phi2D',zq,rq);
+        phiBoundary(rng_ii) = a;
+        % find location of minimim phi along contour
+        [~,ii] = min(phiBoundary);
+        % Limit physical location:
         rlimit = vessel_wLim.r(ii);
         zlimit = vessel_wLim.z(ii);
+        % Extract reference magnetic flux at the limiting location:
         nr = find(r1D > rlimit,1,'first');
         nz = find(z1D > zlimit,1);
-        Phi0 = Phi2D(nz,nr);
+        phi0 = interp2(z1D,r1D,phi2D',zlimit,rlimit);
 end
 
 % Flux coordinate
-xi = Phi2D/Phi0;
-
-% Truncate Xi when > 1
-% dum1 = find(xi>1);
-% xi(dum1) = [-1];
+xi = phi2D/phi0;
 
 %% SECTION 4: MAGNETIC FIELD LINES AND PLASMA EDGE
 % =========================================================================
 % Magnetic field field lines up to the plasma edge
-xi_lines = linspace(1e-2,1,20);
+xi_lines = linspace(1e-2,1,10);
 for ii = 1:numel(xi_lines)
     C = contour(z2D,r2D,xi,[1,1]*xi_lines(ii));
     z_fluxline{ii} = C(1,2:end);
@@ -237,7 +147,7 @@ for ii = 1:numel(xi_lines)
 end
 clearvars ii
 
-
+%% SECTION 5: Plot data
 figure('color','w')
 hold on
 % Magnetic coils:
@@ -255,18 +165,27 @@ for ii = 1:1:numel(xi_lines)
     end
 end
 
-plot(vessel_wLim.z,vessel_wLim.r,'r','LineWidth',2)
-plot(vessel.z,vessel.r,'k-','LineWidth',2)
+% Vacuuum vessel
+plot(vessel_wLim.z,+vessel_wLim.r,'r','LineWidth',2)
+plot(vessel_wLim.z,-vessel_wLim.r,'r','LineWidth',2)
+plot(vessel.z,+vessel.r,'k-','LineWidth',2)
+plot(vessel.z,-vessel.r,'k-','LineWidth',2)
+
+% Target
 plot(zlimit,rlimit,'ro')
+hT = line(z_Target*[1,1],0.08*[-1,+1]);
+set(hT,'color','k','LineWidth',3)
 
-xlim([0,5  ])
-ylim([0,0.15])
+% Formatting
+% set(gca,'PlotBoxAspectRatio',[1 1 1])
+set(gca,'FontName','times')
+xlim([0.25,4.5])
+ylim(0.35*[-1,+1])
 box on
+xlabel('z [m]','Interpreter','Latex','FontSize',13)
+ylabel('r [m]','Interpreter','Latex','FontSize',13)
 
-
-return
-
-%% SECTION 5: Save figure
+%% SECTION 6: Save figure
 % =========================================================================
 % Saving figure:
 
@@ -275,7 +194,8 @@ InputStructure.option.WindowStyle = 'normal';
 saveFig = GetUserInput(InputStructure);
 
 if saveFig
-    saveas(gcf,'Validating Magnetic field code','tiffn')
+    figureName = 'ProtoMPEX_FluxMapping';
+    saveas(gcf,figureName,'tiffn')
 end
 
 % =========================================================================

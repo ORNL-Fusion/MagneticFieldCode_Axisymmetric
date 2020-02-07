@@ -1,4 +1,4 @@
-function [Br2D,Bz2D,Atheta2D,phi2D,z2D,r2D] = CalculateMagField(coil,z1D,r1D)
+function [Br2D,Bz2D,Atheta2D,phi2D,z2D,r2D] = CalculateMagField(coil,z1D,r1D,evalType)
 % #########################################################################
 % Created 2019_12_09, JF Caneses
 % =========================================================================
@@ -41,7 +41,17 @@ function [Br2D,Bz2D,Atheta2D,phi2D,z2D,r2D] = CalculateMagField(coil,z1D,r1D)
 % START OF FUNCTION:
 % =========================================================================
 % Define the area to evaluate the fields at:
-[r2D,z2D] = meshgrid(r1D,z1D);
+if strcmpi(evalType,'grid')
+    % Generate a 2D grid for evaluating field
+    [r2D,z2D] = meshgrid(r1D,z1D);
+elseif strcmpi(evalType,'contour')
+    % Generate a contour over which field is to be evaluated such as along
+    % a boundary
+    r2D = r1D;
+    z2D = z1D;
+else
+    error('Please define "evalType"')
+end
 
 % =========================================================================
 % Calculate the magnetic field and magnetic vector potential:
