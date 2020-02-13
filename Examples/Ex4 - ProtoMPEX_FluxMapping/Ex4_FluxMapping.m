@@ -6,8 +6,6 @@
 % Written by J.F. Caneses Marin
 % Created on 2020-02-06
 
-% evalContour Branch
-
 %% SECTION 1: Read "CoilSetup" spreadsheet
 clearvars
 clc
