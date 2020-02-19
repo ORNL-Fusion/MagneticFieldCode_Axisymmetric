@@ -118,19 +118,19 @@ switch limitType
         phi0 = phi2D(nz,nr);
     case 2 % Based on phi at vacuum vessel boundary
         % Select region of interest:
-        rng_ii = find(vessel_wLim.z > 0.5 & vessel_wLim.z < 3.7);
+        rng_ii = find(vessel_1.z > 0.5 & vessel_1.z < 3.7);
         % Initialize variable:
-        phiBoundary = ones(size(vessel_wLim.z));
+        phiBoundary = ones(size(vessel_1.z));
         % Interpolate phi along vaccum vessel contour
-        zq = vessel_wLim.z(rng_ii);
-        rq = vessel_wLim.r(rng_ii);
+        zq = vessel_1.z(rng_ii);
+        rq = vessel_1.r(rng_ii);
         a = interp2(z1D,r1D,phi2D',zq,rq);
         phiBoundary(rng_ii) = a;
         % find location of minimim phi along contour
         [~,ii] = min(phiBoundary);
         % Limit physical location:
-        rlimit = vessel_wLim.r(ii);
-        zlimit = vessel_wLim.z(ii);
+        rlimit = vessel_1.r(ii);
+        zlimit = vessel_1.z(ii);
         % Extract reference magnetic flux at the limiting location:
         nr = find(r1D > rlimit,1,'first');
         nz = find(z1D > zlimit,1);
@@ -171,10 +171,10 @@ for ii = 1:1:numel(xi_lines)
 end
 
 % Vacuuum vessel
-plot(vessel_wLim.z,+vessel_wLim.r,'r','LineWidth',2)
-plot(vessel_wLim.z,-vessel_wLim.r,'r','LineWidth',2)
-plot(vessel.z,+vessel.r,'k-','LineWidth',2)
-plot(vessel.z,-vessel.r,'k-','LineWidth',2)
+plot(vessel_1.z,+vessel_1.r,'r','LineWidth',2)
+plot(vessel_1.z,-vessel_1.r,'r','LineWidth',2)
+plot(vessel_0.z,+vessel_0.r,'k-','LineWidth',2)
+plot(vessel_0.z,-vessel_0.r,'k-','LineWidth',2)
 
 % Target
 plot(zlimit,rlimit,'ro')
