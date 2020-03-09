@@ -112,7 +112,7 @@ z1D = linspace(-10 ,10 ,300);
 % Calculate the magnetic field and magnetic vector potential:
 dum1 = tic;
 disp('Calculating magnetic field...')
-[Br2D,Bz2D,Atheta2D,Phi2D,z2D,r2D] = CalculateMagField(coil,z1D,r1D);
+[Br2D,Bz2D,Atheta2D,Phi2D,z2D,r2D] = CalculateMagField(coil,z1D,r1D,'grid');
 disp(['Complete! Elapsed time: ',num2str(toc(dum1)),' s'])
 clearvars dum*
 
@@ -376,6 +376,25 @@ if svdt
     fileName = ['GDT_profileData_',date,'.mat'];
     save(fileName,variableNames{:});
     disp('Data saved succesfully!')
+end
+
+%% SECTION 11: create csv of on-axis magnetic field:
+zq = linspace(z1D(1),z1D(end),501);
+Bq = interp1(z1D,B_onAxis,zq);
+
+figure; 
+hold on
+plot(z1D,B_onAxis,'k')
+plot(zq,Bq,'r.')
+
+InputStructure.prompt = {['Would you like to save on-axis Bfield data? Yes [1], No [0]']};
+InputStructure.option.WindowStyle = 'normal';
+svdt = GetUserInput(InputStructure);
+
+if svdt
+    f = [zq',Bq'];
+    fileName = 'Bfield_case_1.txt';
+    save(fileName,'f','-ascii')
 end
 
 % =========================================================================
