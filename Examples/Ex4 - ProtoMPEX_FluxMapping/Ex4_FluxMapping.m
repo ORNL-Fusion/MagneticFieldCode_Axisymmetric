@@ -6,8 +6,6 @@
 % Written by J.F. Caneses Marin
 % Created on 2020-02-06
 
-% evalContour Branch
-
 %% SECTION 1: Read "CoilSetup" spreadsheet
 clearvars
 clc
@@ -28,7 +26,7 @@ confType = 'conf_G';
 
 % Assignment of currents per power supply:
 % =========================================================================
-limitType = 2;
+limitType = 3;
 switch limitType
     case 1 % MPEX-like limiter
         coilCurrents.TR1 = 530;
@@ -39,9 +37,15 @@ switch limitType
     case 2 % Window limiter
         coilCurrents.TR1 = 530;
         coilCurrents.TR2 = 2300;
-        coilCurrents.PS1 = 6000;
+        coilCurrents.PS1 = 6500;
         coilCurrents.PS2 = 4000;
         coilCurrents.PS3 = 220;
+    case 3 % Upstream vaccum vessel limiter
+        coilCurrents.TR1 = 0;
+        coilCurrents.TR2 = 2300;
+        coilCurrents.PS1 = 5000;
+        coilCurrents.PS2 = 4000;
+        coilCurrents.PS3 = 350;
 end
 
 % =========================================================================
@@ -114,19 +118,19 @@ switch limitType
         phi0 = phi2D(nz,nr);
     case 2 % Based on phi at vacuum vessel boundary
         % Select region of interest:
-        rng_ii = find(vessel_wLim.z > 0.5 & vessel_wLim.z < 3.7);
+        rng_ii = find(vessel_1.z > 0.5 & vessel_1.z < 3.7);
         % Initialize variable:
-        phiBoundary = ones(size(vessel_wLim.z));
+        phiBoundary = ones(size(vessel_1.z));
         % Interpolate phi along vaccum vessel contour
-        zq = vessel_wLim.z(rng_ii);
-        rq = vessel_wLim.r(rng_ii);
+        zq = vessel_1.z(rng_ii);
+        rq = vessel_1.r(rng_ii);
         a = interp2(z1D,r1D,phi2D',zq,rq);
         phiBoundary(rng_ii) = a;
         % find location of minimim phi along contour
         [~,ii] = min(phiBoundary);
         % Limit physical location:
-        rlimit = vessel_wLim.r(ii);
-        zlimit = vessel_wLim.z(ii);
+        rlimit = vessel_1.r(ii);
+        zlimit = vessel_1.z(ii);
         % Extract reference magnetic flux at the limiting location:
         nr = find(r1D > rlimit,1,'first');
         nz = find(z1D > zlimit,1);
@@ -145,6 +149,7 @@ for ii = 1:numel(xi_lines)
     z_fluxline{ii} = C(1,2:end);
     r_fluxline{ii} = C(2,2:end);
 end
+close(gcf)
 clearvars ii
 
 %% SECTION 5: Plot data
@@ -166,10 +171,10 @@ for ii = 1:1:numel(xi_lines)
 end
 
 % Vacuuum vessel
-plot(vessel_wLim.z,+vessel_wLim.r,'r','LineWidth',2)
-plot(vessel_wLim.z,-vessel_wLim.r,'r','LineWidth',2)
-plot(vessel.z,+vessel.r,'k-','LineWidth',2)
-plot(vessel.z,-vessel.r,'k-','LineWidth',2)
+plot(vessel_1.z,+vessel_1.r,'r','LineWidth',2)
+plot(vessel_1.z,-vessel_1.r,'r','LineWidth',2)
+plot(vessel_0.z,+vessel_0.r,'k-','LineWidth',2)
+plot(vessel_0.z,-vessel_0.r,'k-','LineWidth',2)
 
 % Target
 plot(zlimit,rlimit,'ro')

@@ -18,20 +18,23 @@ p = addpath(genpath(functionFolder));
 cd(homeFolder)
 
 % =========================================================================
-% Start by defining som arbitrary vacuum vessel:
+% Start by defining some arbitrary vacuum vessel:
 z0 = 0.5;
 zE = 2.8;
 d0 = 1.5;
 vessel.z = [0 ,z0,2.3,zE];
 vessel.r = [2 ,d0,d0 ,0 ];
 
-figure; 
+figure('color','w'); 
+subplot(2,2,1)
 hold on
-plot(vessel.z,vessel.r,'k-')
+plot(vessel.z,vessel.r,'k-','LineWidth',2)
 xlim([0,3])
 ylim([0,2.5])
 box on 
 grid on
+title('Step 1: Define basic geometry')
+set(gcf,'position',[200 90 920  530])
 
 % =========================================================================
 % Perform an operation on the vessel boundary:
@@ -43,13 +46,14 @@ cut.r = [d0,d1,d1,d0];
 % Add element/ perform operation:
 vessel = AddComponent(vessel,cut);
 
-figure; 
+subplot(2,2,2) 
 hold on
-plot(vessel.z,vessel.r,'k-')
+plot(vessel.z,vessel.r,'k-','LineWidth',2)
 xlim([0,3])
 ylim([0,2.5])
 box on 
 grid on
+title('Step 2: Perform a "cut"')
 
 % =========================================================================
 % Define skimmer geometry
@@ -87,13 +91,14 @@ skimmer.r = [skimmer.r2, skimmer.r1, skimmer.r1, skimmer.r2];
 % Add skimmer to vessel:
 vessel = AddComponent(vessel,skimmer);
 
-figure; 
+subplot(2,2,3)
 hold on
-plot(vessel.z,vessel.r,'k-')
+plot(vessel.z,vessel.r,'k-','LineWidth',2)
 xlim([0,3])
 ylim([0,2.5])
 box on 
 grid on
+title('Step 3: Add "skimmers"')
 
 % =========================================================================
 % Mirror image of the vessel:
@@ -114,20 +119,36 @@ ds = 0.1;
 vessel_segmented = SegmentBoundary(vessel,ds);
 
 %% Plot the final result:
-
 % =========================================================================
 % Plot final result:
-figure; 
+subplot(2,2,4); 
 hold on
 % Plot vessel boundary:
-plot(vessel.z ,vessel.r,'ko-')
+plot(vessel.z ,vessel.r,'ko-','LineWidth',2)
 xlim([-3,3])
 ylim([0,2.5])
 box on
 grid on
+title('Step 4: Mirror geometry, segment boundary')
 % Plot segmented vessel boundary:
 for ii = 1:length(vessel_segmented.z)
     plot(vessel_segmented.z(ii),vessel_segmented.r(ii),'r.')
     drawnow
     pause(0.01)
 end
+
+%% Save figure
+% =========================================================================
+% Saving figure:
+
+InputStructure.prompt = {['Would you like to save figure? Yes [1], No [0]']};
+InputStructure.option.WindowStyle = 'normal';
+saveFig = GetUserInput(InputStructure);
+
+if saveFig
+    figureName = 'DrawingVacuumVessel';
+    saveas(gcf,figureName,'tiffn')
+end
+
+% =========================================================================
+disp('End of script')
