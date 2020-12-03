@@ -56,38 +56,38 @@ z1D = linspace(z_Dump,z_Target,300);
 % =========================================================================
 % MPEX-like limiter: case 1
 coilCurrents{1}.TR1 = 530;
-coilCurrents{1}.TR2 = 2300;
-coilCurrents{1}.PS1 = 4500;
-coilCurrents{1}.PS2 = 4000;
-coilCurrents{1}.PS3 = 430;
+coilCurrents{1}.TR2 = 3000;
+coilCurrents{1}.PS1 = 3500;
+coilCurrents{1}.PS2 = 3500;
+coilCurrents{1}.PS3 = 330;
 
 % MPEX-like limiter: case 2
-coilCurrents{2}.TR1 = 530;
-coilCurrents{2}.TR2 = 2300;
-coilCurrents{2}.PS1 = 3500;
-coilCurrents{2}.PS2 = 4000;
-coilCurrents{2}.PS3 = 430;
+% coilCurrents{2}.TR1 = 530;
+% coilCurrents{2}.TR2 = 2300;
+% coilCurrents{2}.PS1 = 3500;
+% coilCurrents{2}.PS2 = 4000;
+% coilCurrents{2}.PS3 = 430;
 
 % Window limiter: case 3
-coilCurrents{3}.TR1 = 530;
-coilCurrents{3}.TR2 = 2300;
-coilCurrents{3}.PS1 = 6800;
-coilCurrents{3}.PS2 = 4000;
-coilCurrents{3}.PS3 = 160;
+% coilCurrents{3}.TR1 = 530;
+% coilCurrents{3}.TR2 = 2300;
+% coilCurrents{3}.PS1 = 6800;
+% coilCurrents{3}.PS2 = 4000;
+% coilCurrents{3}.PS3 = 160;
 
 % Window limiter: case 4
-coilCurrents{4}.TR1 = 530;
-coilCurrents{4}.TR2 = 2300;
-coilCurrents{4}.PS1 = 6000;
-coilCurrents{4}.PS2 = 4000;
-coilCurrents{4}.PS3 = 220;
+% coilCurrents{4}.TR1 = 530;
+% coilCurrents{4}.TR2 = 2300;
+% coilCurrents{4}.PS1 = 6000;
+% coilCurrents{4}.PS2 = 4000;
+% coilCurrents{4}.PS3 = 220;
 
 % Upstream vaccum vessel limiter: case 5
-coilCurrents{5}.TR1 = 0;
-coilCurrents{5}.TR2 = 2300;
-coilCurrents{5}.PS1 = 5000;
-coilCurrents{5}.PS2 = 4000;
-coilCurrents{5}.PS3 = 350;
+% coilCurrents{5}.TR1 = 0;
+% coilCurrents{5}.TR2 = 2300;
+% coilCurrents{5}.PS1 = 5000;
+% coilCurrents{5}.PS2 = 4000;
+% coilCurrents{5}.PS3 = 350;
 
 % Calculate the magnetic field and magnetic vector potential:
 % =========================================================================
