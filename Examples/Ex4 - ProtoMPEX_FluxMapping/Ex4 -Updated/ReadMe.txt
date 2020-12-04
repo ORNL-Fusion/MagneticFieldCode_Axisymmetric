@@ -1,0 +1,1 @@
+This example allows the user to select various choices of window diameters, limiter sizes and skimmers
