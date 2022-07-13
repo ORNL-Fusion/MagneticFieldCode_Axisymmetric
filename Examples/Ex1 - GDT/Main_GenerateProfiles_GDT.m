@@ -34,7 +34,11 @@ close all
 % Define the search path:
 homeFolder = cd;
 % Go back two folders
-cd ..\.. 
+if isunix
+    cd ../..
+elseif ispc
+    cd ..\..
+end
 currentFolder = cd;
 functionFolder = [currentFolder,'\Functions'];
 p = addpath(genpath(functionFolder));
@@ -49,7 +53,7 @@ cd(homeFolder)
 % The main output is to produce a structure called "coilSetup" that
 % contains all the geometrical information of all the coils
 
-coilSetupType = 2;
+coilSetupType = 1;
 switch coilSetupType
     case 1
         % Read "CoilSetup" spreadsheet:

@@ -1,14 +1,14 @@
-function [coil] = CreateCoilStructure(coilSetup,coilCurrents)
+function [coil] = CreateCoilStructure(coilGeometry,coilCurrents)
 % #########################################################################
 % Created 2019_12_09, JF Caneses
 % =========================================================================
 % CreateCoilStructure creates a structure called "coil" which contains all
 % the geometric information, currents and location of coil filaments based
-% on two inputs "coilSetup" and "coilCurrents"
+% on two inputs "coilGeometry" and "coilCurrents"
 % =========================================================================
 %                              INPUT:
 % =========================================================================
-% coilSetup:
+% coilGeometry:
 % -------------------------------------------------------------------------
 % Table that contains all the information to build a
 % physical coil. 
@@ -77,14 +77,14 @@ function [coil] = CreateCoilStructure(coilSetup,coilCurrents)
 % =========================================================================
 % Define coil setup and geometry:
 dum1 = who;
-z         = coilSetup.z;
-dz        = coilSetup.dz;
-r1        = coilSetup.r_inner;
-r2        = coilSetup.r_outer;
-layers_z  = coilSetup.layers_z;
-layers_r  = coilSetup.layers_r;
-datum     = coilSetup.datum; % Defines how "z" is interpreted
-ps        = coilSetup.ps;
+z         = coilGeometry.z;
+dz        = coilGeometry.dz;
+r1        = coilGeometry.r_inner;
+r2        = coilGeometry.r_outer;
+layers_z  = coilGeometry.layers_z;
+layers_r  = coilGeometry.layers_r;
+datum     = coilGeometry.datum; % Defines how "z" is interpreted
+ps        = coilGeometry.ps;
 current  = []  ; % Variable to hold the value of the coil current
 
 % =========================================================================
