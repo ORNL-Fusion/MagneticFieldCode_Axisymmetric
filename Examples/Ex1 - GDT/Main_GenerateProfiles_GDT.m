@@ -34,13 +34,17 @@ close all
 % Define the search path:
 homeFolder = cd;
 % Go back two folders
+<<<<<<< Updated upstream
 if isunix
     cd ../..
 elseif ispc
     cd ..\..
 end
+=======
+cd ../.. 
+>>>>>>> Stashed changes
 currentFolder = cd;
-functionFolder = [currentFolder,'\Functions'];
+functionFolder = [currentFolder,'/Functions'];
 p = addpath(genpath(functionFolder));
 cd(homeFolder)
 

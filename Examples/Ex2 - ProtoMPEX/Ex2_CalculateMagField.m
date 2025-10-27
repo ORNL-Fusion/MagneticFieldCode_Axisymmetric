@@ -25,9 +25,9 @@ close all
 % =========================================================================
 % Define the search path:
 homeFolder = cd;
-cd ..\..
+cd ../..
 currentFolder = cd;
-functionFolder = [currentFolder,'\Functions'];
+functionFolder = [currentFolder,'/Functions'];
 p = addpath(genpath(functionFolder));
 cd(homeFolder)
 

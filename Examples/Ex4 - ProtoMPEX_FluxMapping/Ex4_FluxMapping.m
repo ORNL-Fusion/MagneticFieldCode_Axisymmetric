@@ -14,9 +14,9 @@ close all
 % =========================================================================
 % Define the search path:
 homeFolder = cd;
-cd ..\..
+cd ../..
 currentFolder = cd;
-functionFolder = [currentFolder,'\Functions'];
+functionFolder = [currentFolder,'/Functions'];
 p = addpath(genpath(functionFolder));
 cd(homeFolder)
  
@@ -26,7 +26,7 @@ confType = 'conf_G';
 
 % Assignment of currents per power supply:
 % =========================================================================
-limitType = 3;
+limitType = 5;
 switch limitType
     case 1 % MPEX-like limiter
         coilCurrents.TR1 = 530;
@@ -46,6 +46,22 @@ switch limitType
         coilCurrents.PS1 = 5000;
         coilCurrents.PS2 = 4000;
         coilCurrents.PS3 = 350;
+    case 4 % Only for Josh expt. # 28950
+        
+        coilCurrents.TR1 = 542;
+        coilCurrents.TR2 = 6597;
+        coilCurrents.PS1 = 3469;
+        coilCurrents.PS2 = 6017;
+        coilCurrents.PS3 = 138;
+
+    case 5 % MPEX-like limiter: case 6 ( EC+Impurity case 05/06/2020, Shot #: 30000)
+        coilCurrents{1}.TR1 = 530;
+        coilCurrents{1}.TR2 = 2100;
+        coilCurrents{1}.PS1 = 6800;
+        coilCurrents{1}.PS2 = 3500;
+        coilCurrents{1}.PS3 = 400;
+
+
 end
 
 % =========================================================================
@@ -81,8 +97,8 @@ coilSetup
 tic
 z_Dump = 0.5;
 z_Target = 4.2;
-r1D = linspace(1e-3,0.1  ,30 );
-z1D = linspace(z_Dump,z_Target,300);
+r1D = linspace(1e-3,0.1  ,40);
+z1D = linspace(z_Dump,z_Target,50);
 
 % =========================================================================
 % Calculate the magnetic field and magnetic vector potential:
@@ -161,9 +177,9 @@ for ii = 1:numel(coil)
     plot(coil{ii}.zfil,-coil{ii}.rfil,'r.');
 end
 % Flux lines:
-for ii = 1:1:numel(xi_lines)
-    dum1 = plot((z_fluxline{ii}),+r_fluxline{ii},'k:');
-    dum2 = plot((z_fluxline{ii}),-r_fluxline{ii},'k:');
+for ii = 1:2:numel(xi_lines)
+    dum1 = plot((z_fluxline{ii}),+r_fluxline{ii},'k-');
+    dum2 = plot((z_fluxline{ii}),-r_fluxline{ii},'k-');
     if ii == numel(xi_lines)
         set(dum1,'LineStyle','-','LineWidth',1)
         set(dum2,'LineStyle','-','LineWidth',1)

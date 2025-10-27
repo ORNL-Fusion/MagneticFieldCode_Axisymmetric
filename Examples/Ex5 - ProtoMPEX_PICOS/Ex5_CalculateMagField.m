@@ -18,47 +18,54 @@ saveData = 1;
 % Assignment of currents per power supply:
 % =========================================================================
 
+% ii = 1;
+% coilCurrents{ii}.TR1 = 520;
+% coilCurrents{ii}.TR2 = 3720;
+% coilCurrents{ii}.PS1 = 2000;
+% coilCurrents{ii}.PS2 = 2000;
+% coilCurrents{ii}.PS3 = 200;
+% 
+% ii = 2;
+% coilCurrents{ii}.TR1 = 520;
+% coilCurrents{ii}.TR2 = 3720;
+% coilCurrents{ii}.PS1 = 3000;
+% coilCurrents{ii}.PS2 = 2000;
+% coilCurrents{ii}.PS3 = 200;
+% 
+% ii = 3;
+% coilCurrents{ii}.TR1 = 520;
+% coilCurrents{ii}.TR2 = 3720;
+% coilCurrents{ii}.PS1 = 4000;
+% coilCurrents{ii}.PS2 = 2000;
+% coilCurrents{ii}.PS3 = 200;
+% 
+% ii = 4;
+% coilCurrents{ii}.TR1 = 520;
+% coilCurrents{ii}.TR2 = 3720;
+% coilCurrents{ii}.PS1 = 5000;
+% coilCurrents{ii}.PS2 = 2000;
+% coilCurrents{ii}.PS3 = 200;
+% 
+% ii = 5;
+% coilCurrents{ii}.TR1 = 520;
+% coilCurrents{ii}.TR2 = 3720;
+% coilCurrents{ii}.PS1 = 6000;
+% coilCurrents{ii}.PS2 = 2000;
+% coilCurrents{ii}.PS3 = 200;
+% 
+% ii = 6;
+% coilCurrents{ii}.TR1 = 520;
+% coilCurrents{ii}.TR2 = 3720;
+% coilCurrents{ii}.PS1 = 7000;
+% coilCurrents{ii}.PS2 = 2000;
+% coilCurrents{ii}.PS3 = 200;
+
 ii = 1;
-coilCurrents{ii}.TR1 = 520;
-coilCurrents{ii}.TR2 = 3720;
-coilCurrents{ii}.PS1 = 2000;
-coilCurrents{ii}.PS2 = 2000;
-coilCurrents{ii}.PS3 = 200;
-
-ii = 2;
-coilCurrents{ii}.TR1 = 520;
-coilCurrents{ii}.TR2 = 3720;
-coilCurrents{ii}.PS1 = 3000;
-coilCurrents{ii}.PS2 = 2000;
-coilCurrents{ii}.PS3 = 200;
-
-ii = 3;
-coilCurrents{ii}.TR1 = 520;
-coilCurrents{ii}.TR2 = 3720;
-coilCurrents{ii}.PS1 = 4000;
-coilCurrents{ii}.PS2 = 2000;
-coilCurrents{ii}.PS3 = 200;
-
-ii = 4;
-coilCurrents{ii}.TR1 = 520;
-coilCurrents{ii}.TR2 = 3720;
-coilCurrents{ii}.PS1 = 5000;
-coilCurrents{ii}.PS2 = 2000;
-coilCurrents{ii}.PS3 = 200;
-
-ii = 5;
-coilCurrents{ii}.TR1 = 520;
-coilCurrents{ii}.TR2 = 3720;
-coilCurrents{ii}.PS1 = 6000;
-coilCurrents{ii}.PS2 = 2000;
-coilCurrents{ii}.PS3 = 200;
-
-ii = 6;
-coilCurrents{ii}.TR1 = 520;
-coilCurrents{ii}.TR2 = 3720;
-coilCurrents{ii}.PS1 = 7000;
-coilCurrents{ii}.PS2 = 2000;
-coilCurrents{ii}.PS3 = 200;
+coilCurrents{ii}.TR1 = 600;
+coilCurrents{ii}.TR2 = 160;
+coilCurrents{ii}.PS1 = 5900;
+coilCurrents{ii}.PS2 = 5900;
+coilCurrents{ii}.PS3 = 0;
 
 % Magnetic configuration of interest:
 confType = 'conf_E';
@@ -136,8 +143,8 @@ ylabel('B [T]')
 % =========================================================================
 
 % Select subset:
-xL = 0.75;
-xR = 4.2;
+xL = 0;
+xR = 5;
 
 % Select size:
 N = 300;
@@ -167,7 +174,7 @@ rng = find(xq >= xmin & xq <= xmax);
 x0 = xq(rng(in));
 
 % Normalize data:
-B_norm = B/B0;
+B_norm = B;
 
 figure('color','w')
 hold on
@@ -196,7 +203,7 @@ if saveFig
     % TIFF figure:
     exportgraphics(gcf,[figureName,'.tiff'],'Resolution',600) 
 end
-
+return;
 % Save data to text file:
 % =========================================================================
 if saveData
