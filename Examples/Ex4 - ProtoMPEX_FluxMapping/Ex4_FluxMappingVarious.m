@@ -13,9 +13,9 @@ close all
 % =========================================================================
 % Define the search path:
 homeFolder = cd;
-cd ..\..
+cd ../..
 currentFolder = cd;
-functionFolder = [currentFolder,'\Functions'];
+functionFolder = [currentFolder,'/Functions'];
 p = addpath(genpath(functionFolder));
 cd(homeFolder)
  
@@ -49,17 +49,17 @@ coilSetup
 % Define the area to evaluate the fields at:
 z_Dump = 0.5;
 z_Target = 4.2;
-r1D = linspace(1e-3,0.1  ,40 );
-z1D = linspace(z_Dump,z_Target,300);
+r1D = linspace(1e-6,0.1  ,400 );
+z1D = linspace(z_Dump,z_Target,500);
 
 % Assignment of currents per power supply:
 % =========================================================================
-% MPEX-like limiter: case 1
-coilCurrents{1}.TR1 = 530;
-coilCurrents{1}.TR2 = 3000;
-coilCurrents{1}.PS1 = 3500;
-coilCurrents{1}.PS2 = 3500;
-coilCurrents{1}.PS3 = 330;
+% % MPEX-like limiter: case 1
+% coilCurrents{1}.TR1 = 530;
+% coilCurrents{1}.TR2 = 3000;
+% coilCurrents{1}.PS1 = 3500;
+% coilCurrents{1}.PS2 = 3500;
+% coilCurrents{1}.PS3 = 330;
 
 % MPEX-like limiter: case 2
 % coilCurrents{2}.TR1 = 530;
@@ -68,14 +68,14 @@ coilCurrents{1}.PS3 = 330;
 % coilCurrents{2}.PS2 = 4000;
 % coilCurrents{2}.PS3 = 430;
 
-% Window limiter: case 3
+% % Window limiter: case 3
 % coilCurrents{3}.TR1 = 530;
 % coilCurrents{3}.TR2 = 2300;
 % coilCurrents{3}.PS1 = 6800;
 % coilCurrents{3}.PS2 = 4000;
 % coilCurrents{3}.PS3 = 160;
 
-% Window limiter: case 4
+% % Window limiter: case 4
 % coilCurrents{4}.TR1 = 530;
 % coilCurrents{4}.TR2 = 2300;
 % coilCurrents{4}.PS1 = 6000;
@@ -88,6 +88,36 @@ coilCurrents{1}.PS3 = 330;
 % coilCurrents{5}.PS1 = 5000;
 % coilCurrents{5}.PS2 = 4000;
 % coilCurrents{5}.PS3 = 350;
+
+% % MPEX-like limiter: case 6 (SOLPS EC case)
+% coilCurrents{1}.TR1 = 520;
+% coilCurrents{1}.TR2 = 2200;
+% coilCurrents{1}.PS1 = 3500;
+% coilCurrents{1}.PS2 = 3500;
+% coilCurrents{1}.PS3 = 160;
+
+% MPEX-like limiter: case 6 ( EC+Impurity case 05/06/2020, Shot #: 30000)
+coilCurrents{1}.TR1 = 530;
+coilCurrents{1}.TR2 = 2300;
+coilCurrents{1}.PS1 = 3500;
+coilCurrents{1}.PS2 = 4000;
+coilCurrents{1}.PS3 = 400;
+
+% MPEX AI Digital Twin (  02/14/2020, Shot #: 29128)
+coilCurrents{1}.TR1 = 530;
+coilCurrents{1}.TR2 = 2100;
+coilCurrents{1}.PS1 = 6800;
+coilCurrents{1}.PS2 = 3500;
+coilCurrents{1}.PS3 = 430;
+
+% % % Helicon normal mode paper
+% ii = 1;
+% coilCurrents{ii}.TR1 = 530;
+% coilCurrents{ii}.TR2 = 3500;
+% coilCurrents{ii}.PS1 = 6500;
+% coilCurrents{ii}.PS2 = 6000;
+% coilCurrents{ii}.PS3 = 320;
+
 
 % Calculate the magnetic field and magnetic vector potential:
 % =========================================================================
@@ -158,6 +188,7 @@ clearvars ii
 % =========================================================================
 figureName = 'ProtoMPEX_FluxMappingVarious';
 figure('color','w','Tag',figureName)
+subplot(2,1,1)
 hold on
 % Magnetic coils:
 for ii = 1:numel(coil)
@@ -208,31 +239,35 @@ switch zoomType
         xlim([1,2.5])
         ylim(0.1*[-1,+1])
     case 3
-        set(gca,'PlotBoxAspectRatio',[2.3 1.5 1])
-        xlim([0.25,4.5])
+        set(gca,'PlotBoxAspectRatio',[4 1 1])
+        xlim([0,4.5])
         ylim(0.35*[-1,+1])
 end
 box on
-xlabel('z [m]','Interpreter','Latex','FontSize',13)
+% xlabel('z [m]','Interpreter','Latex','FontSize',13)
 ylabel('r [m]','Interpreter','Latex','FontSize',13)
 grid on
 
 % Magnetic field profiles:
 % =========================================================================
-figureName = 'ProtoMPEX_BzProfileVarious';
-figure('color','w','Tag',figureName)
-hold on
+% figureName = 'ProtoMPEX_BzProfileVarious';
+% figure('color','w','Tag',figureName)
+subplot(212)
 for ii = 1:numel(coilCurrents)
     hBz(ii) = plot(z1D,B2D{ii}(:,1),lineColor{ii},'LineWidth',2);
 end
 box on 
 grid on
-set(gca,'PlotBoxAspectRatio',[2 1 1])
+set(gca,'PlotBoxAspectRatio',[4 1 1])
 set(gca,'FontName','times')
 xlabel('z [m]','Interpreter','Latex','FontSize',13)
 ylabel('B$_0$ [T]','Interpreter','Latex','FontSize',13)
-xlim([0.25,4.5])
+xlim([0,4.5])
 
+writematrix(z1D, 'z1D.csv')
+writematrix(r1D, 'r1D.csv')
+writematrix(Br2D', 'Br2D.csv')
+writematrix(Bz2D', 'Bz2D.csv')
 % Target:
 hT = line(z_Target*[1,1],[0,1]);
 set(hT,'color','k','LineWidth',4)
@@ -256,4 +291,55 @@ if saveFig
 end
 
 % =========================================================================
+%% Calculate B-field and write it in .csv and .nc format
+disp('Writing the B-field profiles');
+
+nR=length(r1D);
+nZ=length(z1D);
+
+r=r1D; z=z1D;
+Br=Br2D; Bz=Bz2D; Bt=zeros(size(Bz2D));
+
+ncid = netcdf.create(('./bfield_protoMPEX.nc'),'NC_WRITE');
+
+dimR = netcdf.defDim(ncid,'nX',nR);
+
+dimZ = netcdf.defDim(ncid,'nZ',nZ);
+
+gridRnc = netcdf.defVar(ncid,'x','float',dimR);
+
+gridZnc = netcdf.defVar(ncid,'z','float',dimZ);
+
+brnc = netcdf.defVar(ncid,'br','float',[dimR dimZ]);
+btnc = netcdf.defVar(ncid,'bt','float',[dimR dimZ]);
+bznc = netcdf.defVar(ncid,'bz','float',[dimR dimZ]);
+
+netcdf.endDef(ncid);
+% 
+netcdf.putVar(ncid,gridRnc,r);
+netcdf.putVar(ncid,gridZnc,z);
+
+
+netcdf.putVar(ncid,brnc,Br);
+netcdf.putVar(ncid,btnc,Bt);
+netcdf.putVar(ncid,bznc,Bz);
+
+netcdf.close(ncid);
+
+hold off
+
+% Quiver plot for Br, Bz
+figure
+imagesc(z,r,Bt')
+set(gca,'FontName','times','fontSize',24);
+ylabel('$r$ [m]','interpreter','Latex','fontSize',24)
+xlabel('$z$ [m]','interpreter','latex','fontSize',24)
+xlim([0.5 4.2])
+
+disp('Calculated the B-field profile');
+
+
+
+
+
 disp('End of script')
