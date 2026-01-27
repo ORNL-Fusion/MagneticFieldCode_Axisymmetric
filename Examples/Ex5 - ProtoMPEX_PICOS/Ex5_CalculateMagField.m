@@ -159,6 +159,10 @@ for ii = 1:size(B2D,2)
 end
 
 
+B_0 = sqrt(Br2D.^2+Bz2D.^2);
+figure; plot(z2D,100.*Br2D./B_0)
+
+
 %% SECTION 5: Normalize data:
 % =========================================================================
 
@@ -218,3 +222,7 @@ if saveData
     f1 = [xq];
     save([fileName,'.txt'],'f1','-ascii');
 end
+
+
+B_0 = sqrt(Br.^2+Bz.^2);
+figure; plot(z,Br(400,:)./B_0(400,:))

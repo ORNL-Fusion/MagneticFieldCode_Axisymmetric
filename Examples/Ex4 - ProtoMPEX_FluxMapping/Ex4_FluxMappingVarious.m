@@ -89,26 +89,33 @@ z1D = linspace(z_Dump,z_Target,500);
 % coilCurrents{5}.PS2 = 4000;
 % coilCurrents{5}.PS3 = 350;
 
-% % MPEX-like limiter: case 6 (SOLPS EC case)
-% coilCurrents{1}.TR1 = 520;
-% coilCurrents{1}.TR2 = 2200;
-% coilCurrents{1}.PS1 = 3500;
-% coilCurrents{1}.PS2 = 3500;
-% coilCurrents{1}.PS3 = 160;
-
-% MPEX-like limiter: case 6 ( EC+Impurity case 05/06/2020, Shot #: 30000)
-coilCurrents{1}.TR1 = 530;
-coilCurrents{1}.TR2 = 2300;
+% % % MPEX-like limiter: case 6 (SOLPS EC case)
+coilCurrents{1}.TR1 = 520;
+coilCurrents{1}.TR2 = 2200;
 coilCurrents{1}.PS1 = 3500;
-coilCurrents{1}.PS2 = 4000;
-coilCurrents{1}.PS3 = 400;
+coilCurrents{1}.PS2 = 3500;
+coilCurrents{1}.PS3 = 160;
 
-% MPEX AI Digital Twin (  02/14/2020, Shot #: 29128)
+% % MPEX-like limiter: case 6 ( EC+Impurity case 05/06/2020, Shot #: 30000)
+% coilCurrents{1}.TR1 = 530;
+% coilCurrents{1}.TR2 = 2300;
+% coilCurrents{1}.PS1 = 3500;
+% coilCurrents{1}.PS2 = 4000;
+% coilCurrents{1}.PS3 = 400;
+% 
+%% MPEX AI Digital Twin (  02/14/2020, Shot #: 29128)
 coilCurrents{1}.TR1 = 530;
 coilCurrents{1}.TR2 = 2100;
 coilCurrents{1}.PS1 = 6800;
 coilCurrents{1}.PS2 = 3500;
 coilCurrents{1}.PS3 = 430;
+
+% ii = 1;
+% coilCurrents{ii}.TR1 = 600;
+% coilCurrents{ii}.TR2 = 160;
+% coilCurrents{ii}.PS1 = 5900;
+% coilCurrents{ii}.PS2 = 5900;
+% coilCurrents{ii}.PS3 = 0;
 
 % % % Helicon normal mode paper
 % ii = 1;
@@ -272,6 +279,7 @@ writematrix(Bz2D', 'Bz2D.csv')
 hT = line(z_Target*[1,1],[0,1]);
 set(hT,'color','k','LineWidth',4)
 
+
 %% SECTION 6: Save figure
 % =========================================================================
 % Saving figure:
@@ -280,66 +288,111 @@ InputStructure.prompt = {['Would you like to save figure? Yes [1], No [0]']};
 InputStructure.option.WindowStyle = 'normal';
 saveFig = GetUserInput(InputStructure);
 
-if saveFig
-    figureName = 'ProtoMPEX_FluxMappingVarious';
-    hdum1 = findobj('Tag',figureName);
-    saveas(hdum1,figureName,'tiffn')
-    
-    figureName = 'ProtoMPEX_BzProfileVarious';
-    hdum1 = findobj('Tag',figureName);
-    saveas(hdum1,figureName,'tiffn')
-end
+% if saveFig
+%     figureName = 'ProtoMPEX_FluxMappingVarious';
+%     hdum1 = findobj('Tag',figureName);
+%     saveas(hdum1,figureName,'tiffn')
+% 
+%     figureName = 'ProtoMPEX_BzProfileVarious';
+%     hdum1 = findobj('Tag',figureName);
+%     saveas(hdum1,figureName,'tiffn')
+% end
 
 % =========================================================================
-%% Calculate B-field and write it in .csv and .nc format
-disp('Writing the B-field profiles');
+file = 'bfield_protoMPEX.nc';
+if exist(file,'file'); delete(file); end   % avoid leftover shapes in an old file
 
-nR=length(r1D);
-nZ=length(z1D);
+r  = r1D(:);                 % nR×1
+z  = z1D(:);                 % nZ×1
+Br = Br2D;                   % likely nZ×nR
+Bz = Bz2D;                   % likely nZ×nR
+Bt = zeros(size(Bz2D),'like',Bz2D);
 
-r=r1D; z=z1D;
-Br=Br2D; Bz=Bz2D; Bt=zeros(size(Bz2D));
+% --- declare coordinates
+nccreate(file,'r','Dimensions',{'r',numel(r)},'Datatype','double');
+nccreate(file,'z','Dimensions',{'z',numel(z)},'Datatype','double');
+ncwrite(file,'r',r);  ncwrite(file,'z',z);
 
-ncid = netcdf.create(('./bfield_protoMPEX.nc'),'NC_WRITE');
+% --- declare fields in [r × z] order
+nccreate(file,'br','Dimensions',{'r',numel(r),'z',numel(z)},'Datatype','single');
+nccreate(file,'bt','Dimensions',{'r',numel(r),'z',numel(z)},'Datatype','single');
+nccreate(file,'bz','Dimensions',{'r',numel(r),'z',numel(z)},'Datatype','single');
 
-dimR = netcdf.defDim(ncid,'nX',nR);
+% --- write: permute if needed so data is [nR × nZ]
+if isequal(size(Br), [numel(z) numel(r)]), Br = permute(Br,[2 1]); end
+if isequal(size(Bt), [numel(z) numel(r)]), Bt = permute(Bt,[2 1]); end
+if isequal(size(Bz), [numel(z) numel(r)]), Bz = permute(Bz,[2 1]); end
 
-dimZ = netcdf.defDim(ncid,'nZ',nZ);
+% (Optional) sanity check
+assert(isequal(size(Br), [numel(r) numel(z)]), 'Br size mismatch after permute');
+assert(isequal(size(Bz), [numel(r) numel(z)]), 'Bz size mismatch after permute');
 
-gridRnc = netcdf.defVar(ncid,'x','float',dimR);
+ncwrite(file,'br',Br);
+ncwrite(file,'bt',Bt);
+ncwrite(file,'bz',Bz);
+% Read/plot
+r0  = ncread(file,'r'); 
+z0  = ncread(file,'z'); 
+bz0 = ncread(file,'bz');   % [nR×nZ]
 
-gridZnc = netcdf.defVar(ncid,'z','float',dimZ);
-
-brnc = netcdf.defVar(ncid,'br','float',[dimR dimZ]);
-btnc = netcdf.defVar(ncid,'bt','float',[dimR dimZ]);
-bznc = netcdf.defVar(ncid,'bz','float',[dimR dimZ]);
-
-netcdf.endDef(ncid);
-% 
-netcdf.putVar(ncid,gridRnc,r);
-netcdf.putVar(ncid,gridZnc,z);
-
-
-netcdf.putVar(ncid,brnc,Br);
-netcdf.putVar(ncid,btnc,Bt);
-netcdf.putVar(ncid,bznc,Bz);
-
-netcdf.close(ncid);
+figure
+imagesc(z0, r0, bz0);       % NO transpose
+set(gca,'YDir','normal'); colorbar
 
 hold off
 
-% Quiver plot for Br, Bz
+% % Quiver plot for Br, Bz
+% figure
+% imagesc(z,r,Bz')
+% set(gca,'FontName','times','fontSize',24);
+% ylabel('$r$ [m]','interpreter','Latex','fontSize',24)
+% xlabel('$z$ [m]','interpreter','latex','fontSize',24)
+% xlim([0.5 4.2])
+% 
+% disp('Calculated the B-field profile');
+
+%%
+file = 'bfield_protoMPEX.nc';
+% file1='profilesProtoMPEX_28950.nc';
+x0 = ncread(file,'r');
+z0 = ncread(file,'z');
+% ni0 = ncread(file,'ni');
+% ne0 = ncread(file,'ne');
+% ti0 = ncread(file,'ti');
+% te0 = ncread(file,'te');
+% gradTi0=-ncread(file,'gradTi');
+% vr0 = ncread(file,'vr');
+% vt0 = ncread(file,'vt');
+% vz0 = ncread(file,'vz');
+% br0 = ncread(file,'br');
+% bt0 = ncread(file,'bt');
+bz0 = ncread(file,'bz');
+% vz1= ncread(file1,'vz');
+figure;imagesc(z0,x0,bz0)
+
+B_0 = sqrt(Br.^2+Bz.^2);
 figure
-imagesc(z,r,Bt')
-set(gca,'FontName','times','fontSize',24);
-ylabel('$r$ [m]','interpreter','Latex','fontSize',24)
-xlabel('$z$ [m]','interpreter','latex','fontSize',24)
-xlim([0.5 4.2])
+subplot(211)
+for ii = 1:numel(coilCurrents)
+    hBz(ii) = plot(z1D,B2D{ii}(:,1),lineColor{ii},'LineWidth',2);
+end
+box on 
+grid on
+set(gca,'PlotBoxAspectRatio',[4 1 1])
+set(gca,'FontName','times')
+xlabel('z [m]','Interpreter','Latex','FontSize',13)
+ylabel('B$_0$ [T]','Interpreter','Latex','FontSize',13)
+xlim([0,4.5])
 
-disp('Calculated the B-field profile');
-
-
-
+writematrix(z1D, 'z1D.csv')
+writematrix(r1D, 'r1D.csv')
+writematrix(Br2D', 'Br2D.csv')
+writematrix(Bz2D', 'Bz2D.csv')
+% Target:
+hT = line(z_Target*[1,1],[0,1]);
+set(hT,'color','k','LineWidth',4)
+subplot(212)
+figure; plot(z,Br(260,:)./B_0(260,:))
 
 
 disp('End of script')
