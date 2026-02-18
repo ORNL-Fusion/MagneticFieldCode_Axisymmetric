@@ -5,3 +5,9 @@
 *.tif
 *.nc
 *.nc
+
+# Ignore large data
+*.nc
+*.txt
+*.csv
+*.tif
