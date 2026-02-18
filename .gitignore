@@ -1,0 +1,5 @@
+# Ignore data and image files
+*.nc
+*.txt
+*.csv
+*.tif
