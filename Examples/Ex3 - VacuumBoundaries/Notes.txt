@@ -1,3 +1,0 @@
-Demonstrates how to draw a vacuum vessel using the followng functions:
-- AddComponent.m
-- SegmentBoundary.m
