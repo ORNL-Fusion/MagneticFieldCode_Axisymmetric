@@ -22,4 +22,5 @@ plot(z,Qtot_r(rHeliconIndex,:));
 plot(zGrid,Qtot_r_Helicon);
 
 figure
-imagesc(zGrid, thetaGrid, Qtot_r_Helicon'*ones(1,ntheta))
+imagesc(thetaGrid, zGrid, Qtot_r_Helicon'*ones(1,ntheta));
+colorbar;
