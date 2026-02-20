@@ -1,0 +1,213 @@
+% Magnetic field in Proto-MPEX
+
+% Written by J.F. Caneses Marin
+% Created on 2021-10-11
+
+%% SECTION 1: Read "CoilSetup" spreadsheet
+clearvars
+clc
+close all
+
+saveFig = 1;
+saveData = 1;
+
+% #########################################################################
+%                       INPUT FROM USER:
+% #########################################################################
+
+% Assignment of currents per power supply:
+% =========================================================================
+
+ii = 1;
+coilCurrents{ii}.TR1 = 520;
+coilCurrents{ii}.TR2 = 3720;
+coilCurrents{ii}.PS1 = 2000;
+coilCurrents{ii}.PS2 = 2000;
+coilCurrents{ii}.PS3 = 200;
+
+ii = 2;
+coilCurrents{ii}.TR1 = 520;
+coilCurrents{ii}.TR2 = 3720;
+coilCurrents{ii}.PS1 = 3000;
+coilCurrents{ii}.PS2 = 2000;
+coilCurrents{ii}.PS3 = 200;
+
+ii = 3;
+coilCurrents{ii}.TR1 = 520;
+coilCurrents{ii}.TR2 = 3720;
+coilCurrents{ii}.PS1 = 4000;
+coilCurrents{ii}.PS2 = 2000;
+coilCurrents{ii}.PS3 = 200;
+
+ii = 4;
+coilCurrents{ii}.TR1 = 520;
+coilCurrents{ii}.TR2 = 3720;
+coilCurrents{ii}.PS1 = 5000;
+coilCurrents{ii}.PS2 = 2000;
+coilCurrents{ii}.PS3 = 200;
+
+ii = 5;
+coilCurrents{ii}.TR1 = 520;
+coilCurrents{ii}.TR2 = 3720;
+coilCurrents{ii}.PS1 = 6000;
+coilCurrents{ii}.PS2 = 2000;
+coilCurrents{ii}.PS3 = 200;
+
+ii = 6;
+coilCurrents{ii}.TR1 = 520;
+coilCurrents{ii}.TR2 = 3720;
+coilCurrents{ii}.PS1 = 7000;
+coilCurrents{ii}.PS2 = 2000;
+coilCurrents{ii}.PS3 = 200;
+
+% Magnetic configuration of interest:
+confType = 'conf_E';
+        
+% #########################################################################
+
+% #########################################################################
+ 
+% =========================================================================
+
+
+% =========================================================================
+% Read "CoilSetup" spreadsheet:
+dum1 = tic;
+disp('Reading "coilSetup" spreadsheet...')
+coilSetup = readtable('CoilSetup_ProtoMPEX.xlsx','Sheet',confType);
+disp('Reading complete!')
+toc(dum1);
+
+% =========================================================================
+% Display "coilSetup" on CLI:
+coilSetup
+
+% Correction:
+coilSetup.datum = 5*ones(size(coilSetup.datum));
+
+% #########################################################################
+% IMPORTANT QUANTITIES FROM THIS SECTION:
+% #########################################################################
+% - coilSetup: structure that contains all the geometrical info of the
+% coils
+% - coilCurrents: strucuture that contains the power supply currents
+% - coil: object that describes the specific coil setup and is the input
+% for the magnetic field calculator function
+
+%% SECTION 2: Calculate magnetic field
+% =========================================================================
+% Define the area to evaluate the fields at:
+z_Dump = 0;
+z_Target = 5;
+r1D = linspace(1e-3,1e-3,1);
+z1D = linspace(z_Dump,z_Target,500);
+
+% Calculate the magnetic field and magnetic vector potential:
+% =========================================================================
+dum1 = tic;
+disp(['Calculating magnetic field for ',num2str(numel(coilCurrents)),' cases ...'])
+for ii = 1:numel(coilCurrents)
+    % Create "coil" structure":
+    [coil] = CreateCoilStructure(coilSetup,coilCurrents{ii});
+    % Calculate magnetic field and vector potential:
+    [Br2D,Bz2D,~,phi2D{ii},z2D,r2D] = CalculateMagField(coil,z1D,r1D,'grid');
+    % Magnetic field magnitude:
+    B2D{ii} = sqrt(Br2D.*Br2D  + Bz2D.*Bz2D);
+    disp(['Case ',num2str(ii),' complete!'])
+end
+disp(['Complete! Elapsed time: ',num2str(toc(dum1)),' s'])
+clearvars dum*
+
+%% SECTION 3: plot magnetic field
+% =========================================================================
+
+figure('color','w')
+hold on
+for ii = 1:numel(B2D)
+    plot(z1D,B2D{ii})
+end
+box on
+
+set(gcf,'position',[482   144   560   363])
+xlabel('x [m]')
+ylabel('B [T]')
+
+%% SECTION 4: Interpolate data
+% =========================================================================
+
+% Select subset:
+xL = 0.75;
+xR = 4.2;
+
+% Select size:
+N = 300;
+
+% Create query vector:
+xq = linspace(xL,xR,N)';
+
+% Assign data:
+for ii = 1:size(B2D,2)
+    B(:,ii) = interp1(z1D',B2D{ii}(:,1),xq);
+    plot(xq,B(:,ii),'lineWidth',2)
+end
+
+
+%% SECTION 5: Normalize data:
+% =========================================================================
+
+% Search B reference:
+xmin = 1.1;
+xmax = 2.5;
+
+% Select spatial search range:
+rng = find(xq >= xmin & xq <= xmax);
+
+% Extract B refernce:
+[B0,in] = min(B(rng,1));
+x0 = xq(rng(in));
+
+% Normalize data:
+B_norm = B/B0;
+
+figure('color','w')
+hold on
+for ii = 1:numel(B2D)
+    plot(xq,B_norm(:,ii))
+end
+plot(x0,1,'ko')
+plot(x0,1,'k.')
+box on
+
+set(gcf,'position',[482   144   560   363])
+xlabel('x [m]')
+ylabel('B/B_0')
+titleText = ['B_0 = ',num2str(B0),' , X_0 = ',num2str(x0),' , X_L = ',num2str(xL),...
+    ' , X_R = ',num2str(xR),' , N = ',num2str(N)];
+title(titleText) 
+
+% Save figure:
+% =========================================================================
+if saveFig
+    figureName = 'ProtoMPEX_B_dataset_1';
+
+    % PDF figure:
+    exportgraphics(gcf,[figureName,'.pdf'],'Resolution',300) 
+
+    % TIFF figure:
+    exportgraphics(gcf,[figureName,'.tiff'],'Resolution',600) 
+end
+
+% Save data to text file:
+% =========================================================================
+if saveData
+    fileName = figureName;
+    
+    for ii = 1:numel(B2D)
+        f1 = [B_norm(:,ii)];
+        save([fileName,'_PS1_',num2str(coilCurrents{ii}.PS1),'.txt'],'f1','-ascii');
+    end
+    
+    fileName = ['x_',fileName];
+    f1 = [xq];
+    save([fileName,'.txt'],'f1','-ascii');
+end
