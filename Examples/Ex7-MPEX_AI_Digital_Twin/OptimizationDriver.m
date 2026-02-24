@@ -1,3 +1,6 @@
+%% This code does not work.
+
+
 function [currentList, ObjectiveList] = ObjectiveSampler(currents,zHeliconMin,zHeliconMax,rHelicon, zTarget, rTargetMin,rTargetMax)
 zHeliconMin = 1.6;
 zHeliconMax = 1.9;
