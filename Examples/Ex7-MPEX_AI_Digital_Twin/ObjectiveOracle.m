@@ -1,49 +1,54 @@
-function [r,z,Qperp_r,Qperp_z] = ObjectiveOracle(params)
+function [objectives, weightedObjective] ... 
+    = ObjectiveOracle(currents,zHeliconMin,zHeliconMax,rHelicon, zTarget, rTargetMin,rTargetMax)
 
+objectives = [0 0 0]';
+weights = [1 1 1]';
+weights = weights/sum(weights);
 
-zHeliconMin = 1.6;
-zHeliconMax = 1.9;
-rHelicon = 0.06;
+% get the r, z coordinates and the r,z components of the heat flux
 
-zTarget = 4.2
-rTargetMin = 0;
-rTargetMax = 0.05;
+[r,z,Qtot_r, Qtot_z] = generate_plasmaProfile_opt(currents);
 
-
-
-
-cd 'MagneticFieldCode_Axisymmetric-master/Examples/Ex4-ProtoMPEX_FluxMapping';
-bFieldFileName = '../../../analytical_model/bfield_protoMPEX.nc';
-bFieldFileNameLoc = 'bfield_protoMPEX.nc';
-Ex4_FluxMappingVarious_Opt2(params,bFieldFileName);
-cd '../../../analytical_model'
-[r,z,Qperp_r,Qperp_z] = profiles_protoMPEX_wPerpFlux_Opt2(bFieldFileNameLoc);
-
+% recover the mesh size for r and z
 dr = r(2)-r(1);
 dz = z(2)-z(1);
 
-% Find first objective
-% 1) find rindex that is closest to rHelicon
+% find the value of r and the associated index that is closest to the helicon radius 
 
 [rDistance, rHeliconIndex] = min(abs(r - rHelicon));
 rHeliconNearest = r(rHeliconIndex);
 
+% find the value of z and the associated index that is closest to the target
+
 [zDistance, zTargetIndex] = min(abs(z - zTarget));
 zTargetNearest = z(zTargetIndex);
 
-integrand_1 = (gradient(Qperp_r(rHeliconIndex,:),dr)).^2;
-integrand_1 = integrand_1(z > zHeliconMin & z < zHeliconMax);
 
-integrand_2 = (Qperp_z(:,zTargetIndex)).^2;
-integrand_2 = integrand_2(r > rTargetMin & r < rTargetMax);
+% compute three objectives
 
-objective_1 = dz*sum(integrand_1);
-objective_2 = dr*sum(integrand_2.*r(r > rTargetMin & r < rTargetMax));
+% objective 1 is the L^2 value of the heat flux along the helicon window
 
-objective = objective_1 + objective_2
-;
+integrand = Qtot_r.^2;
+integrand = integrand(z > zHeliconMin - dz/2 & z < zHeliconMax + dz/2);
+objectives(1) = 2*pi*dz*sum(integrand);
+
+% objective 1 is the L^2 value of the z derivate of the heat flux along the helicon window
+
+integrand = (gradient(Qtot_r(rHeliconIndex,:),dz)).^2;
+integrand = integrand(z > zHeliconMin - dz/2 & z < zHeliconMax + dz/2);
+objectives(2) = 2*pi*dz*sum(integrand);
 
 
-% dQperp_dz = gradient(Qperp,dz);
+
+% objective 3 is the L^2 value of the heat flux along the target
+
+integrand = (Qtot_z(:,zTargetIndex)).^2;
+integrand = integrand(r > rTargetMin - dr/2 & r < rTargetMax + dr/2);
+objectives(3) = -pi*dr*sum(integrand.*r(r > rTargetMin - dr/2 & r < rTargetMax + dr/2));
+
+weightedObjective = weights'*objectives;
+
+
+
 
 

@@ -1,6 +1,9 @@
 function [r,z,Qtot_r, Qtot_z] = generate_plasmaProfile_opt(currents)
 
 
+flag.write = false;
+flag.plot = false;
+
 %% ProtoMPEX: Compute ne, te using original psi formulation and write to one NetCDF
 % + Adds perpendicular (cross-field) particle flux using D_perp = 0.45 m^2/s
 %   - Vector components: gamma_perp_r, gamma_perp_z = -D_perp * grad(ne)
@@ -42,12 +45,14 @@ nZ = numel(z);
 % -------------------------------------------------------------------------
 % PLOT INPUT Bz FIELD
 % -------------------------------------------------------------------------
-figure; imagesc(z, r, Bz);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('Input $B_z$ [T]','Interpreter','latex');
-colorbar; axis image tight; xlim([0.5 4.2]);
+if flag.plot
+    figure; imagesc(z, r, Bz);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('Input $B_z$ [T]','Interpreter','latex');
+    colorbar; axis image tight; xlim([0.5 4.2]);
+end
 
 % -------------------------------------------------------------------------
 % CALCULATE PSI USING ORIGINAL METHOD (YOUR LOOP)
@@ -68,12 +73,15 @@ r0 = 0.0625;        % [m]
 psi_norm_val = interp2(z, r, psi, z0, r0, 'linear');
 psiN = psi ./ psi_norm_val;
 
-figure; imagesc(z, r, psiN);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('Normalized $\psi_N$','Interpreter','latex');
-colorbar;
+if flag.plot
+    figure; imagesc(z, r, psiN);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('Normalized $\psi_N$','Interpreter','latex');
+    colorbar;
+end
+
 
 % -------------------------------------------------------------------------
 % CONSTRUCT Te AND ne PROFILES FROM psiN
@@ -313,333 +321,343 @@ Qtot_psi(~isfinite(Qtot_psi)) = 0;
 % -------------------------------------------------------------------------
 % PLOT PROFILES
 % -------------------------------------------------------------------------
-figure; imagesc(z, r, Te);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('$T_e$ [eV]','Interpreter','latex');
-colorbar;
 
-figure; imagesc(z, r, Ne);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('$n_e$ [m$^{-3}$]','Interpreter','latex');
-colorbar;
+if flag.plot
 
-figure; imagesc(z, r, Vpar);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('$v_\parallel$ [m/s]','Interpreter','latex');
-colorbar;
-
-figure; imagesc(z, r, Mach);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('$M_\parallel = v_\parallel / c_s$','Interpreter','latex');
-colorbar;
-caxis([-1 1]);   % enforce physical Mach range
-hold on;
-
-% Superpose Mach lineout at r = 0 (nearest grid point)
-[~, iR0] = min(abs(r - 0.0));
-plot([z(1) z(end)], [r(iR0) r(iR0)], 'w--', 'LineWidth', 1.5);
-
-yyaxis right;
-plot(z, Mach(iR0,:), 'k-', 'LineWidth', 2.0);
-ylabel(sprintf('Lineout $M_{\\parallel}(z)$ at $r=%.4f$ m', r(iR0)), 'Interpreter','latex');
-ylim([-1.05 1.05]);
-yyaxis left;
-
-figure; imagesc(z, r, GammaPar);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('$\Gamma_\parallel$ [m$^{-2}$ s$^{-1}$]','Interpreter','latex');
-colorbar;
-
-figure; imagesc(z, r, Qpar);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('$q_\parallel$ [W m$^{-2}$]','Interpreter','latex');
-colorbar;
-
-figure; imagesc(z, r, GammaPerp);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('$\Gamma_\perp$ across $\psi$ [m$^{-2}$ s$^{-1}$]','Interpreter','latex');
-colorbar;
-
-figure; imagesc(z, r, Qperp);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('$q_\perp$ across $\psi$ [W m$^{-2}$] ($\chi_\perp=1$)','Interpreter','latex');
-colorbar;
-
-Qtot_map = Qpar + Qperp;
-figure; imagesc(z, r, Qtot_map);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('$q_{\mathrm{tot}} = q_{\parallel} + q_{\perp}$ [W m$^{-2}$]','Interpreter','latex');
-colorbar;
-
-figure; imagesc(z, r, Qtot_psi);
-set(gca,'YDir','normal','FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('$r$ [m]','Interpreter','latex');
-title('$q_{\mathrm{tot},\psi}$ (across $\psi$) [W m$^{-2}$]','Interpreter','latex');
-colorbar;
-
-% -------------------------------------------------------------------------
-% HEAT-FLUX PROFILES
-%   1) Lineout vs z at r = 0.06 m
-%   2) Radial profile averaged over 1.6 < z < 1.9
-% -------------------------------------------------------------------------
-[~, iR06] = min(abs(r - 0.06));
-zMask = (z > 1.6) & (z < 1.9);
-if ~any(zMask)
-    error('No z points satisfy 1.6 < z < 1.9. Please check z-grid.');
+    figure; imagesc(z, r, Te);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('$T_e$ [eV]','Interpreter','latex');
+    colorbar;
+    
+    figure; imagesc(z, r, Ne);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('$n_e$ [m$^{-3}$]','Interpreter','latex');
+    colorbar;
+    
+    figure; imagesc(z, r, Vpar);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('$v_\parallel$ [m/s]','Interpreter','latex');
+    colorbar;
+    
+    figure; imagesc(z, r, Mach);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('$M_\parallel = v_\parallel / c_s$','Interpreter','latex');
+    colorbar;
+    caxis([-1 1]);   % enforce physical Mach range
+    hold on;
+    
+    % Superpose Mach lineout at r = 0 (nearest grid point)
+    [~, iR0] = min(abs(r - 0.0));
+    plot([z(1) z(end)], [r(iR0) r(iR0)], 'w--', 'LineWidth', 1.5);
+    
+    yyaxis right;
+    plot(z, Mach(iR0,:), 'k-', 'LineWidth', 2.0);
+    ylabel(sprintf('Lineout $M_{\\parallel}(z)$ at $r=%.4f$ m', r(iR0)), 'Interpreter','latex');
+    ylim([-1.05 1.05]);
+    yyaxis left;
+    
+    figure; imagesc(z, r, GammaPar);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('$\Gamma_\parallel$ [m$^{-2}$ s$^{-1}$]','Interpreter','latex');
+    colorbar;
+    
+    figure; imagesc(z, r, Qpar);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('$q_\parallel$ [W m$^{-2}$]','Interpreter','latex');
+    colorbar;
+    
+    figure; imagesc(z, r, GammaPerp);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('$\Gamma_\perp$ across $\psi$ [m$^{-2}$ s$^{-1}$]','Interpreter','latex');
+    colorbar;
+    
+    figure; imagesc(z, r, Qperp);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('$q_\perp$ across $\psi$ [W m$^{-2}$] ($\chi_\perp=1$)','Interpreter','latex');
+    colorbar;
+    
+    Qtot_map = Qpar + Qperp;
+    figure; imagesc(z, r, Qtot_map);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('$q_{\mathrm{tot}} = q_{\parallel} + q_{\perp}$ [W m$^{-2}$]','Interpreter','latex');
+    colorbar;
+    
+    figure; imagesc(z, r, Qtot_psi);
+    set(gca,'YDir','normal','FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('$r$ [m]','Interpreter','latex');
+    title('$q_{\mathrm{tot},\psi}$ (across $\psi$) [W m$^{-2}$]','Interpreter','latex');
+    colorbar;
+    
+    % -------------------------------------------------------------------------
+    % HEAT-FLUX PROFILES
+    %   1) Lineout vs z at r = 0.06 m
+    %   2) Radial profile averaged over 1.6 < z < 1.9
+    % -------------------------------------------------------------------------
+    [~, iR06] = min(abs(r - 0.06));
+    zMask = (z > 1.6) & (z < 1.9);
+    if ~any(zMask)
+        error('No z points satisfy 1.6 < z < 1.9. Please check z-grid.');
+    end
+    
+    qpar_z_r06  = abs(Qpar(iR06, :));
+    qperp_z_r06 = abs(Qperp(iR06, :));
+    qtot_z_r06  = abs(Qpar(iR06, :) + Qperp(iR06, :));
+    qpsi_z_r06  = abs(Qtot_psi(iR06, :));
+    
+    qpar_r_win  = mean(abs(Qpar(:, zMask)), 2);
+    qperp_r_win = mean(abs(Qperp(:, zMask)), 2);
+    qtot_r_win  = mean(abs(Qpar(:, zMask) + Qperp(:, zMask)), 2);
+    qpsi_r_win  = mean(abs(Qtot_psi(:, zMask)), 2);
+    
+    % Positive floor for log-scale plotting
+    qFloor = 1e-12;
+    qpar_z_r06  = max(qpar_z_r06,  qFloor);
+    qperp_z_r06 = max(qperp_z_r06, qFloor);
+    qtot_z_r06  = max(qtot_z_r06,  qFloor);
+    qpsi_z_r06  = max(qpsi_z_r06,  qFloor);
+    qpar_r_win  = max(qpar_r_win,  qFloor);
+    qperp_r_win = max(qperp_r_win, qFloor);
+    qtot_r_win  = max(qtot_r_win,  qFloor);
+    qpsi_r_win  = max(qpsi_r_win,  qFloor);
+    
+    figure;
+    hPar1 = semilogy(z, qpar_z_r06, 'k-', 'LineWidth', 2.0); hold on;
+    hPerp1 = semilogy(z, qperp_z_r06, 'r-', 'LineWidth', 2.0);
+    hTot1  = semilogy(z, qtot_z_r06, 'b-', 'LineWidth', 2.0);
+    hPsi1  = semilogy(z, qpsi_z_r06, 'm--', 'LineWidth', 1.8);
+    xline(1.6, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
+    xline(1.9, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
+    set(gca,'FontName','Times','FontSize',18);
+    xlabel('$z$ [m]','Interpreter','latex');
+    ylabel('Heat flux [W m$^{-2}$]','Interpreter','latex');
+    ylim([1e0 1e7]);
+    title(sprintf('Absolute heat-flux lineout at $r=%.4f$ m', r(iR06)), 'Interpreter','latex');
+    leg1 = {'$|q_\parallel|$','$|q_\perp|$','$|q_{\mathrm{tot}}|$','$|q_{\mathrm{tot},\psi}|$'};
+    legend([hPar1 hPerp1 hTot1 hPsi1], leg1, 'Interpreter','latex','Location','best');
+    grid on; box on;
+    
+    figure;
+    hPar2 = semilogy(r, qpar_r_win, 'k-', 'LineWidth', 2.0); hold on;
+    hPerp2 = semilogy(r, qperp_r_win, 'r-', 'LineWidth', 2.0);
+    hTot2  = semilogy(r, qtot_r_win, 'b-', 'LineWidth', 2.0);
+    hPsi2  = semilogy(r, qpsi_r_win, 'm--', 'LineWidth', 1.8);
+    xline(0.06, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
+    set(gca,'FontName','Times','FontSize',18);
+    xlabel('$r$ [m]','Interpreter','latex');
+    ylabel('Heat flux [W m$^{-2}$]','Interpreter','latex');
+    ylim([1e0 1e7]);
+    title('Absolute radial heat-flux profile averaged over $1.6<z<1.9$', 'Interpreter','latex');
+    leg2 = {'$|q_\parallel|$','$|q_\perp|$','$|q_{\mathrm{tot}}|$','$|q_{\mathrm{tot},\psi}|$'};
+    legend([hPar2 hPerp2 hTot2 hPsi2], leg2, 'Interpreter','latex','Location','best');
+    grid on; box on;
 end
-
-qpar_z_r06  = abs(Qpar(iR06, :));
-qperp_z_r06 = abs(Qperp(iR06, :));
-qtot_z_r06  = abs(Qpar(iR06, :) + Qperp(iR06, :));
-qpsi_z_r06  = abs(Qtot_psi(iR06, :));
-
-qpar_r_win  = mean(abs(Qpar(:, zMask)), 2);
-qperp_r_win = mean(abs(Qperp(:, zMask)), 2);
-qtot_r_win  = mean(abs(Qpar(:, zMask) + Qperp(:, zMask)), 2);
-qpsi_r_win  = mean(abs(Qtot_psi(:, zMask)), 2);
-
-% Positive floor for log-scale plotting
-qFloor = 1e-12;
-qpar_z_r06  = max(qpar_z_r06,  qFloor);
-qperp_z_r06 = max(qperp_z_r06, qFloor);
-qtot_z_r06  = max(qtot_z_r06,  qFloor);
-qpsi_z_r06  = max(qpsi_z_r06,  qFloor);
-qpar_r_win  = max(qpar_r_win,  qFloor);
-qperp_r_win = max(qperp_r_win, qFloor);
-qtot_r_win  = max(qtot_r_win,  qFloor);
-qpsi_r_win  = max(qpsi_r_win,  qFloor);
-
-figure;
-hPar1 = semilogy(z, qpar_z_r06, 'k-', 'LineWidth', 2.0); hold on;
-hPerp1 = semilogy(z, qperp_z_r06, 'r-', 'LineWidth', 2.0);
-hTot1  = semilogy(z, qtot_z_r06, 'b-', 'LineWidth', 2.0);
-hPsi1  = semilogy(z, qpsi_z_r06, 'm--', 'LineWidth', 1.8);
-xline(1.6, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
-xline(1.9, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
-set(gca,'FontName','Times','FontSize',18);
-xlabel('$z$ [m]','Interpreter','latex');
-ylabel('Heat flux [W m$^{-2}$]','Interpreter','latex');
-ylim([1e0 1e7]);
-title(sprintf('Absolute heat-flux lineout at $r=%.4f$ m', r(iR06)), 'Interpreter','latex');
-leg1 = {'$|q_\parallel|$','$|q_\perp|$','$|q_{\mathrm{tot}}|$','$|q_{\mathrm{tot},\psi}|$'};
-legend([hPar1 hPerp1 hTot1 hPsi1], leg1, 'Interpreter','latex','Location','best');
-grid on; box on;
-
-figure;
-hPar2 = semilogy(r, qpar_r_win, 'k-', 'LineWidth', 2.0); hold on;
-hPerp2 = semilogy(r, qperp_r_win, 'r-', 'LineWidth', 2.0);
-hTot2  = semilogy(r, qtot_r_win, 'b-', 'LineWidth', 2.0);
-hPsi2  = semilogy(r, qpsi_r_win, 'm--', 'LineWidth', 1.8);
-xline(0.06, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
-set(gca,'FontName','Times','FontSize',18);
-xlabel('$r$ [m]','Interpreter','latex');
-ylabel('Heat flux [W m$^{-2}$]','Interpreter','latex');
-ylim([1e0 1e7]);
-title('Absolute radial heat-flux profile averaged over $1.6<z<1.9$', 'Interpreter','latex');
-leg2 = {'$|q_\parallel|$','$|q_\perp|$','$|q_{\mathrm{tot}}|$','$|q_{\mathrm{tot},\psi}|$'};
-legend([hPar2 hPerp2 hTot2 hPsi2], leg2, 'Interpreter','latex','Location','best');
-grid on; box on;
 
 % -------------------------------------------------------------------------
 % WRITE TO ONE NetCDF FILE
 % -------------------------------------------------------------------------
-disp('Writing combined ProtoMPEX profiles to NetCDF...');
 
-outFile = 'protoMPEX_profiles.nc';
-if exist(outFile,'file'); delete(outFile); end
+if flag.write
 
-cmpr = {'Format','netcdf4','DeflateLevel',4,'Shuffle',true};
 
-% Dimensions
-nccreate(outFile,'r','Dimensions',{'r',nR},'Datatype','double',cmpr{:});
-nccreate(outFile,'z','Dimensions',{'z',nZ},'Datatype','double',cmpr{:});
-ncwrite(outFile,'r',r);
-ncwrite(outFile,'z',z);
+    disp('Writing combined ProtoMPEX profiles to NetCDF...');
+    
+    outFile = 'protoMPEX_profiles.nc';
+    if exist(outFile,'file'); delete(outFile); end
+    
+    cmpr = {'Format','netcdf4','DeflateLevel',4,'Shuffle',true};
+    
+    % Dimensions
+    nccreate(outFile,'r','Dimensions',{'r',nR},'Datatype','double',cmpr{:});
+    nccreate(outFile,'z','Dimensions',{'z',nZ},'Datatype','double',cmpr{:});
+    ncwrite(outFile,'r',r);
+    ncwrite(outFile,'z',z);
+    
+    % Variables (all [r × z])
+    nccreate(outFile,'br','Dimensions',{'r',nR,'z',nZ},'Datatype','single',cmpr{:});
+    nccreate(outFile,'bt','Dimensions',{'r',nR,'z',nZ},'Datatype','single',cmpr{:});
+    nccreate(outFile,'bz','Dimensions',{'r',nR,'z',nZ},'Datatype','single',cmpr{:});
+    nccreate(outFile,'ne','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'te','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'vpar','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'gamma_par','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qpar','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'gamma_par_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'gamma_par_t','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'gamma_par_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'gamma_par_psi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'bdotnpsi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qpar_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qpar_t','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qpar_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qpar_psi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    
+    % Perpendicular particle fluxes
+    nccreate(outFile,'gamma_perp','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'gamma_perp_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'gamma_perp_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    
+    % NEW: Perpendicular heat fluxes
+    nccreate(outFile,'qperp','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qperp_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qperp_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    
+    % Total particle and heat fluxes
+    nccreate(outFile,'gamma_tot_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'gamma_tot_t','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'gamma_tot_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'gamma_tot_psi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qtot_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qtot_t','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qtot_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    nccreate(outFile,'qtot_psi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    
+    % Absolute-value companions for all flux variables (suffix: _abs)
+    fluxVarNames = {'gamma_par','qpar','gamma_par_r','gamma_par_t','gamma_par_z','gamma_par_psi', ...
+                    'qpar_r','qpar_t','qpar_z','qpar_psi', ...
+                    'gamma_perp','gamma_perp_r','gamma_perp_z', ...
+                    'qperp','qperp_r','qperp_z', ...
+                    'gamma_tot_r','gamma_tot_t','gamma_tot_z','gamma_tot_psi', ...
+                    'qtot_r','qtot_t','qtot_z','qtot_psi'};
+    for iFlux = 1:numel(fluxVarNames)
+        nccreate(outFile,[fluxVarNames{iFlux}, '_abs'], ...
+            'Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+    end
+    
+    % Write data
+    ncwrite(outFile,'br',Br);
+    ncwrite(outFile,'bt',Bt);
+    ncwrite(outFile,'bz',Bz);
+    ncwrite(outFile,'ne',Ne);
+    ncwrite(outFile,'te',Te);
+    ncwrite(outFile,'vpar',Vpar);
+    ncwrite(outFile,'gamma_par',GammaPar);
+    ncwrite(outFile,'qpar',Qpar);
+    ncwrite(outFile,'gamma_par_r',GammaPar_r);
+    ncwrite(outFile,'gamma_par_t',GammaPar_t);
+    ncwrite(outFile,'gamma_par_z',GammaPar_z);
+    ncwrite(outFile,'gamma_par_psi',GammaPar_psi);
+    ncwrite(outFile,'bdotnpsi',bDotNpsi);
+    ncwrite(outFile,'qpar_r',Qpar_r);
+    ncwrite(outFile,'qpar_t',Qpar_t);
+    ncwrite(outFile,'qpar_z',Qpar_z);
+    ncwrite(outFile,'qpar_psi',Qpar_psi);
+    
+    ncwrite(outFile,'gamma_perp',GammaPerp);
+    ncwrite(outFile,'gamma_perp_r',GammaPerp_r);
+    ncwrite(outFile,'gamma_perp_z',GammaPerp_z);
+    
+    % NEW: Write heat fluxes
+    ncwrite(outFile,'qperp',Qperp);
+    ncwrite(outFile,'qperp_r',Qperp_r);
+    ncwrite(outFile,'qperp_z',Qperp_z);
+    ncwrite(outFile,'gamma_tot_r',GammaTot_r);
+    ncwrite(outFile,'gamma_tot_t',GammaTot_t);
+    ncwrite(outFile,'gamma_tot_z',GammaTot_z);
+    ncwrite(outFile,'gamma_tot_psi',GammaTot_psi);
+    ncwrite(outFile,'qtot_r',Qtot_r);
+    ncwrite(outFile,'qtot_t',Qtot_t);
+    ncwrite(outFile,'qtot_z',Qtot_z);
+    ncwrite(outFile,'qtot_psi',Qtot_psi);
+    
+    % Write absolute-value companions
+    fluxData = {GammaPar,Qpar,GammaPar_r,GammaPar_t,GammaPar_z,GammaPar_psi, ...
+                Qpar_r,Qpar_t,Qpar_z,Qpar_psi, ...
+                GammaPerp,GammaPerp_r,GammaPerp_z, ...
+                Qperp,Qperp_r,Qperp_z, ...
+                GammaTot_r,GammaTot_t,GammaTot_z,GammaTot_psi, ...
+                Qtot_r,Qtot_t,Qtot_z,Qtot_psi};
+    for iFlux = 1:numel(fluxVarNames)
+        ncwrite(outFile,[fluxVarNames{iFlux}, '_abs'], abs(fluxData{iFlux}));
+    end
+    
+    % Metadata
+    ncwriteatt(outFile,'/','title','ProtoMPEX profiles with ne, Te, B-field, v_parallel, analytical fluxes, and perpendicular particle + heat fluxes');
+    ncwriteatt(outFile,'/','layout','All 2D variables are [r × z]');
+    ncwriteatt(outFile,'/','D_perp_m2_per_s',Dperp);
+    ncwriteatt(outFile,'/','chi_perp_m2_per_s',chiPerp);
+    ncwriteatt(outFile,'/','psi_normal_method','n_hat from analytic grad(psi): dpsi/dr=2*pi*r*Bz, dpsi/dz=-2*pi*r*Br');
+    ncwriteatt(outFile,'/','bDotNpsi_filter_tol',bDotN_tol);
+    ncwriteatt(outFile,'/','flux_convention','Signed flux variables are primary; companion *_abs variables store magnitudes.');
+    ncwriteatt(outFile,'/','gasPuff_particles_per_s',gasPuff_Gps);
+    ncwriteatt(outFile,'/','PRF_kW',PRF_kW);
+    ncwriteatt(outFile,'/','Preq_kW_from_ionization_cost',Preq_kW);
+    ncwriteatt(outFile,'/','powerFactor_PRF_over_Preq_capped',powerFactor);
+    ncwriteatt(outFile,'/','Eion_eV_per_pair',Eion_eV);
+    ncwriteatt(outFile,'/','ne_ref_for_power_scaling_m3',ne_ref_for_power);
+    ncwriteatt(outFile,'/','Preq_kW_for_target_ne_max',Preq_ne_kW);
+    ncwriteatt(outFile,'/','power_margin_PRF_over_Preq_ne',powerMargin);
+    ncwriteatt(outFile,'/','ne_model_ne_cap_m3',ne_cap);
+    ncwriteatt(outFile,'/','ne_model_type','helicon_fixed_ne_target_with_power_check');
+    
+    ncwriteatt(outFile,'r','units','m');
+    ncwriteatt(outFile,'z','units','m');
+    ncwriteatt(outFile,'br','units','tesla');
+    ncwriteatt(outFile,'bt','units','tesla');
+    ncwriteatt(outFile,'bz','units','tesla');
+    ncwriteatt(outFile,'ne','units','m^-3');
+    ncwriteatt(outFile,'te','units','eV');
+    ncwriteatt(outFile,'vpar','units','m s^-1');
+    ncwriteatt(outFile,'gamma_par','units','m^-2 s^-1');
+    ncwriteatt(outFile,'qpar','units','W m^-2');
+    ncwriteatt(outFile,'gamma_par_r','units','m^-2 s^-1');
+    ncwriteatt(outFile,'gamma_par_t','units','m^-2 s^-1');
+    ncwriteatt(outFile,'gamma_par_z','units','m^-2 s^-1');
+    ncwriteatt(outFile,'gamma_par_psi','units','m^-2 s^-1');
+    ncwriteatt(outFile,'gamma_par_psi','description','Parallel particle flux projected to psi-normal; non-zero is numerical leakage due to b_hat·n_hat_psi != 0');
+    ncwriteatt(outFile,'bdotnpsi','units','1');
+    ncwriteatt(outFile,'bdotnpsi','description','Dot product b_hat·n_hat_psi; should be approximately zero');
+    ncwriteatt(outFile,'qpar_r','units','W m^-2');
+    ncwriteatt(outFile,'qpar_t','units','W m^-2');
+    ncwriteatt(outFile,'qpar_z','units','W m^-2');
+    ncwriteatt(outFile,'qpar_psi','units','W m^-2');
+    ncwriteatt(outFile,'qpar_psi','description','Parallel heat flux projected to psi-normal; non-zero is numerical leakage due to b_hat·n_hat_psi != 0');
+    
+    ncwriteatt(outFile,'gamma_perp','units','m^-2 s^-1');
+    ncwriteatt(outFile,'gamma_perp','description','Scalar cross-field particle flux across psi: (-D_perp*grad ne)·n_hat(psi), with n_hat from B identities');
+    ncwriteatt(outFile,'gamma_perp_r','units','m^-2 s^-1');
+    ncwriteatt(outFile,'gamma_perp_z','units','m^-2 s^-1');
+    
+    ncwriteatt(outFile,'qperp','units','W m^-2');
+    ncwriteatt(outFile,'qperp','description','Scalar cross-field heat flux across psi: (-chi_perp*ne*e*grad Te)·n_hat(psi), with n_hat from B identities');
+    ncwriteatt(outFile,'qperp_r','units','W m^-2');
+    ncwriteatt(outFile,'qperp_z','units','W m^-2');
+    ncwriteatt(outFile,'gamma_tot_r','units','m^-2 s^-1');
+    ncwriteatt(outFile,'gamma_tot_t','units','m^-2 s^-1');
+    ncwriteatt(outFile,'gamma_tot_z','units','m^-2 s^-1');
+    ncwriteatt(outFile,'gamma_tot_psi','units','m^-2 s^-1');
+    ncwriteatt(outFile,'gamma_tot_psi','description','Across-psi total particle flux; set to gamma_perp (parallel cross-psi is ideally zero in axisymmetry)');
+    ncwriteatt(outFile,'qtot_r','units','W m^-2');
+    ncwriteatt(outFile,'qtot_t','units','W m^-2');
+    ncwriteatt(outFile,'qtot_z','units','W m^-2');
+    ncwriteatt(outFile,'qtot_psi','units','W m^-2');
+    ncwriteatt(outFile,'qtot_psi','description','Across-psi total heat flux; set to qperp (parallel cross-psi is ideally zero in axisymmetry)');
+    
+    % Metadata for absolute-value companions
+    for iFlux = 1:numel(fluxVarNames)
+        absName = [fluxVarNames{iFlux}, '_abs'];
+        ncwriteatt(outFile,absName,'units',ncreadatt(outFile,fluxVarNames{iFlux},'units'));
+        ncwriteatt(outFile,absName,'description',['Absolute value of ', fluxVarNames{iFlux}]);
+    end
+    
+    disp(['✅ Wrote ', outFile, ' successfully.']);
 
-% Variables (all [r × z])
-nccreate(outFile,'br','Dimensions',{'r',nR,'z',nZ},'Datatype','single',cmpr{:});
-nccreate(outFile,'bt','Dimensions',{'r',nR,'z',nZ},'Datatype','single',cmpr{:});
-nccreate(outFile,'bz','Dimensions',{'r',nR,'z',nZ},'Datatype','single',cmpr{:});
-nccreate(outFile,'ne','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'te','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'vpar','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'gamma_par','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qpar','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'gamma_par_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'gamma_par_t','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'gamma_par_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'gamma_par_psi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'bdotnpsi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qpar_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qpar_t','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qpar_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qpar_psi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-
-% Perpendicular particle fluxes
-nccreate(outFile,'gamma_perp','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'gamma_perp_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'gamma_perp_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-
-% NEW: Perpendicular heat fluxes
-nccreate(outFile,'qperp','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qperp_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qperp_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-
-% Total particle and heat fluxes
-nccreate(outFile,'gamma_tot_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'gamma_tot_t','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'gamma_tot_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'gamma_tot_psi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qtot_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qtot_t','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qtot_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-nccreate(outFile,'qtot_psi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
-
-% Absolute-value companions for all flux variables (suffix: _abs)
-fluxVarNames = {'gamma_par','qpar','gamma_par_r','gamma_par_t','gamma_par_z','gamma_par_psi', ...
-                'qpar_r','qpar_t','qpar_z','qpar_psi', ...
-                'gamma_perp','gamma_perp_r','gamma_perp_z', ...
-                'qperp','qperp_r','qperp_z', ...
-                'gamma_tot_r','gamma_tot_t','gamma_tot_z','gamma_tot_psi', ...
-                'qtot_r','qtot_t','qtot_z','qtot_psi'};
-for iFlux = 1:numel(fluxVarNames)
-    nccreate(outFile,[fluxVarNames{iFlux}, '_abs'], ...
-        'Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
 end
-
-% Write data
-ncwrite(outFile,'br',Br);
-ncwrite(outFile,'bt',Bt);
-ncwrite(outFile,'bz',Bz);
-ncwrite(outFile,'ne',Ne);
-ncwrite(outFile,'te',Te);
-ncwrite(outFile,'vpar',Vpar);
-ncwrite(outFile,'gamma_par',GammaPar);
-ncwrite(outFile,'qpar',Qpar);
-ncwrite(outFile,'gamma_par_r',GammaPar_r);
-ncwrite(outFile,'gamma_par_t',GammaPar_t);
-ncwrite(outFile,'gamma_par_z',GammaPar_z);
-ncwrite(outFile,'gamma_par_psi',GammaPar_psi);
-ncwrite(outFile,'bdotnpsi',bDotNpsi);
-ncwrite(outFile,'qpar_r',Qpar_r);
-ncwrite(outFile,'qpar_t',Qpar_t);
-ncwrite(outFile,'qpar_z',Qpar_z);
-ncwrite(outFile,'qpar_psi',Qpar_psi);
-
-ncwrite(outFile,'gamma_perp',GammaPerp);
-ncwrite(outFile,'gamma_perp_r',GammaPerp_r);
-ncwrite(outFile,'gamma_perp_z',GammaPerp_z);
-
-% NEW: Write heat fluxes
-ncwrite(outFile,'qperp',Qperp);
-ncwrite(outFile,'qperp_r',Qperp_r);
-ncwrite(outFile,'qperp_z',Qperp_z);
-ncwrite(outFile,'gamma_tot_r',GammaTot_r);
-ncwrite(outFile,'gamma_tot_t',GammaTot_t);
-ncwrite(outFile,'gamma_tot_z',GammaTot_z);
-ncwrite(outFile,'gamma_tot_psi',GammaTot_psi);
-ncwrite(outFile,'qtot_r',Qtot_r);
-ncwrite(outFile,'qtot_t',Qtot_t);
-ncwrite(outFile,'qtot_z',Qtot_z);
-ncwrite(outFile,'qtot_psi',Qtot_psi);
-
-% Write absolute-value companions
-fluxData = {GammaPar,Qpar,GammaPar_r,GammaPar_t,GammaPar_z,GammaPar_psi, ...
-            Qpar_r,Qpar_t,Qpar_z,Qpar_psi, ...
-            GammaPerp,GammaPerp_r,GammaPerp_z, ...
-            Qperp,Qperp_r,Qperp_z, ...
-            GammaTot_r,GammaTot_t,GammaTot_z,GammaTot_psi, ...
-            Qtot_r,Qtot_t,Qtot_z,Qtot_psi};
-for iFlux = 1:numel(fluxVarNames)
-    ncwrite(outFile,[fluxVarNames{iFlux}, '_abs'], abs(fluxData{iFlux}));
-end
-
-% Metadata
-ncwriteatt(outFile,'/','title','ProtoMPEX profiles with ne, Te, B-field, v_parallel, analytical fluxes, and perpendicular particle + heat fluxes');
-ncwriteatt(outFile,'/','layout','All 2D variables are [r × z]');
-ncwriteatt(outFile,'/','D_perp_m2_per_s',Dperp);
-ncwriteatt(outFile,'/','chi_perp_m2_per_s',chiPerp);
-ncwriteatt(outFile,'/','psi_normal_method','n_hat from analytic grad(psi): dpsi/dr=2*pi*r*Bz, dpsi/dz=-2*pi*r*Br');
-ncwriteatt(outFile,'/','bDotNpsi_filter_tol',bDotN_tol);
-ncwriteatt(outFile,'/','flux_convention','Signed flux variables are primary; companion *_abs variables store magnitudes.');
-ncwriteatt(outFile,'/','gasPuff_particles_per_s',gasPuff_Gps);
-ncwriteatt(outFile,'/','PRF_kW',PRF_kW);
-ncwriteatt(outFile,'/','Preq_kW_from_ionization_cost',Preq_kW);
-ncwriteatt(outFile,'/','powerFactor_PRF_over_Preq_capped',powerFactor);
-ncwriteatt(outFile,'/','Eion_eV_per_pair',Eion_eV);
-ncwriteatt(outFile,'/','ne_ref_for_power_scaling_m3',ne_ref_for_power);
-ncwriteatt(outFile,'/','Preq_kW_for_target_ne_max',Preq_ne_kW);
-ncwriteatt(outFile,'/','power_margin_PRF_over_Preq_ne',powerMargin);
-ncwriteatt(outFile,'/','ne_model_ne_cap_m3',ne_cap);
-ncwriteatt(outFile,'/','ne_model_type','helicon_fixed_ne_target_with_power_check');
-
-ncwriteatt(outFile,'r','units','m');
-ncwriteatt(outFile,'z','units','m');
-ncwriteatt(outFile,'br','units','tesla');
-ncwriteatt(outFile,'bt','units','tesla');
-ncwriteatt(outFile,'bz','units','tesla');
-ncwriteatt(outFile,'ne','units','m^-3');
-ncwriteatt(outFile,'te','units','eV');
-ncwriteatt(outFile,'vpar','units','m s^-1');
-ncwriteatt(outFile,'gamma_par','units','m^-2 s^-1');
-ncwriteatt(outFile,'qpar','units','W m^-2');
-ncwriteatt(outFile,'gamma_par_r','units','m^-2 s^-1');
-ncwriteatt(outFile,'gamma_par_t','units','m^-2 s^-1');
-ncwriteatt(outFile,'gamma_par_z','units','m^-2 s^-1');
-ncwriteatt(outFile,'gamma_par_psi','units','m^-2 s^-1');
-ncwriteatt(outFile,'gamma_par_psi','description','Parallel particle flux projected to psi-normal; non-zero is numerical leakage due to b_hat·n_hat_psi != 0');
-ncwriteatt(outFile,'bdotnpsi','units','1');
-ncwriteatt(outFile,'bdotnpsi','description','Dot product b_hat·n_hat_psi; should be approximately zero');
-ncwriteatt(outFile,'qpar_r','units','W m^-2');
-ncwriteatt(outFile,'qpar_t','units','W m^-2');
-ncwriteatt(outFile,'qpar_z','units','W m^-2');
-ncwriteatt(outFile,'qpar_psi','units','W m^-2');
-ncwriteatt(outFile,'qpar_psi','description','Parallel heat flux projected to psi-normal; non-zero is numerical leakage due to b_hat·n_hat_psi != 0');
-
-ncwriteatt(outFile,'gamma_perp','units','m^-2 s^-1');
-ncwriteatt(outFile,'gamma_perp','description','Scalar cross-field particle flux across psi: (-D_perp*grad ne)·n_hat(psi), with n_hat from B identities');
-ncwriteatt(outFile,'gamma_perp_r','units','m^-2 s^-1');
-ncwriteatt(outFile,'gamma_perp_z','units','m^-2 s^-1');
-
-ncwriteatt(outFile,'qperp','units','W m^-2');
-ncwriteatt(outFile,'qperp','description','Scalar cross-field heat flux across psi: (-chi_perp*ne*e*grad Te)·n_hat(psi), with n_hat from B identities');
-ncwriteatt(outFile,'qperp_r','units','W m^-2');
-ncwriteatt(outFile,'qperp_z','units','W m^-2');
-ncwriteatt(outFile,'gamma_tot_r','units','m^-2 s^-1');
-ncwriteatt(outFile,'gamma_tot_t','units','m^-2 s^-1');
-ncwriteatt(outFile,'gamma_tot_z','units','m^-2 s^-1');
-ncwriteatt(outFile,'gamma_tot_psi','units','m^-2 s^-1');
-ncwriteatt(outFile,'gamma_tot_psi','description','Across-psi total particle flux; set to gamma_perp (parallel cross-psi is ideally zero in axisymmetry)');
-ncwriteatt(outFile,'qtot_r','units','W m^-2');
-ncwriteatt(outFile,'qtot_t','units','W m^-2');
-ncwriteatt(outFile,'qtot_z','units','W m^-2');
-ncwriteatt(outFile,'qtot_psi','units','W m^-2');
-ncwriteatt(outFile,'qtot_psi','description','Across-psi total heat flux; set to qperp (parallel cross-psi is ideally zero in axisymmetry)');
-
-% Metadata for absolute-value companions
-for iFlux = 1:numel(fluxVarNames)
-    absName = [fluxVarNames{iFlux}, '_abs'];
-    ncwriteatt(outFile,absName,'units',ncreadatt(outFile,fluxVarNames{iFlux},'units'));
-    ncwriteatt(outFile,absName,'description',['Absolute value of ', fluxVarNames{iFlux}]);
-end
-
-disp(['✅ Wrote ', outFile, ' successfully.']);
