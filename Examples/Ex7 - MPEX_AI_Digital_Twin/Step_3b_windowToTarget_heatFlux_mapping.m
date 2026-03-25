@@ -1,0 +1,595 @@
+%% Step_3b_windowToTarget_heatFlux_mapping.m
+% Annular source model using a fully filled FIXED PARALLEL source map
+%
+% PURPOSE
+%   - Read the fixed tube-carried source map Q_parallel_full_lm
+%   - Treat it as an annular source on a PLANE z = z_source
+%   - Trace each annular patch to a PLANE target z = z_target
+%   - Reconstruct plane-surface heat fluxes from local incidence angle
+%
+% IMPORTANT CONSISTENCY
+%   - Q_parallel_lm is the fixed tube-carried quantity inferred previously
+%     from the cylindrical window.
+%   - In this script, q_source_lm is only a DIAGNOSTIC projection of that
+%     fixed tube quantity onto the artificial source plane z = z_source:
+%
+%         q_source_lm = q_parallel_lm * sin(alpha_source)
+%
+%   - Therefore q_source_lm is NOT the measured cylindrical-window heat flux.
+%
+% PLANE NORMALS
+%   Since source and target are both planes at fixed z:
+%
+%       sin(alpha_source) = |Bz| / |B|
+%       sin(alpha_t)      = |Bz| / |B|
+%
+% INPUT
+%   1) bfield_protoMPEX_shotSeries_1.nc
+%   2) fullSource_Qparallel.mat
+%
+% OUTPUT
+%   trueAnnulusSource_toTarget_fromFullQparallel_output.nc
+%
+% -------------------------------------------------------------------------
+
+clear; close all; clc;
+
+%% ------------------------------------------------------------------------
+% USER INPUTS
+% -------------------------------------------------------------------------
+profileFile = 'bfield_protoMPEX_shotSeries_1.nc';
+sourceFile  = 'fullSource_Qparallel.mat';
+outFile     = 'trueAnnulusSource_toTarget_fromFullQparallel_output.nc';
+
+z_source = 1.75915;         % [m]
+z_target = 3.900;         % [m]
+
+dz_trace = 0.001;         % [m]
+nStepsMax = 7000;
+stop_if_outside_grid = true;
+
+nXt = 320;
+nYt = 320;
+
+makePlots = true;
+makeTrajectoryPlot = true;
+nTrajToPlot = 60;
+
+%% ------------------------------------------------------------------------
+% STEP 0. LOAD MAGNETIC FIELD
+% -------------------------------------------------------------------------
+fprintf('Reading magnetic field: %s ...\n', profileFile);
+
+r  = double(ncread(profileFile, 'r')); r = r(:);
+z  = double(ncread(profileFile, 'z')); z = z(:);
+
+Br = double(ncread(profileFile, 'br'));
+Bt = double(ncread(profileFile, 'bt'));
+Bz = double(ncread(profileFile, 'bz'));
+
+nR = numel(r);
+nZ = numel(z);
+
+if ~isequal(size(Br), [nR, nZ])
+    Br = permute(Br, [2 1]);
+    Bt = permute(Bt, [2 1]);
+    Bz = permute(Bz, [2 1]);
+end
+
+if z_source < min(z) || z_source > max(z)
+    error('z_source is outside magnetic-field domain.');
+end
+if z_target < min(z) || z_target > max(z)
+    error('z_target is outside magnetic-field domain.');
+end
+
+FBr = griddedInterpolant({r, z}, Br, 'linear', 'none');
+FBt = griddedInterpolant({r, z}, Bt, 'linear', 'none');
+FBz = griddedInterpolant({r, z}, Bz, 'linear', 'none');
+
+%% ------------------------------------------------------------------------
+% STEP 1. LOAD FULL FIXED PARALLEL SOURCE MAP
+% -------------------------------------------------------------------------
+fprintf('Reading %s ...\n', sourceFile);
+
+S = load(sourceFile);
+
+requiredVars = {'Q_parallel_full_lm','r_cent_full','r_edges_full', ...
+                'theta_cent_deg','theta_edges_deg','A_full_lm'};
+for k = 1:numel(requiredVars)
+    if ~isfield(S, requiredVars{k})
+        error('Missing variable %s in source file.', requiredVars{k});
+    end
+end
+
+q_parallel_lm = double(S.Q_parallel_full_lm);
+r_cent = double(S.r_cent_full(:));
+r_edges = double(S.r_edges_full(:));
+theta_cent_deg = double(S.theta_cent_deg(:)).';
+theta_edges_deg = double(S.theta_edges_deg(:)).';
+A_source_lm = double(S.A_full_lm);
+
+[nL, nM] = size(q_parallel_lm);
+
+if numel(r_cent) ~= nL
+    error('Length of r_cent_full does not match q_parallel_lm rows.');
+end
+if numel(theta_cent_deg) ~= nM
+    error('Length of theta_cent_deg does not match q_parallel_lm columns.');
+end
+
+fprintf('Loaded fixed parallel source size = [%d x %d]\n', nL, nM);
+fprintf('Source radial range = [%g, %g] m\n', min(r_edges), max(r_edges));
+
+%% ------------------------------------------------------------------------
+% STEP 2. BUILD ANNULAR SOURCE PATCHES
+% -------------------------------------------------------------------------
+fprintf('Building annular source patches ...\n');
+
+[THETA_LM_DEG, R_LM] = meshgrid(theta_cent_deg, r_cent);
+THETA_LM_RAD = deg2rad(THETA_LM_DEG);
+
+Xsrc_lm = R_LM .* cos(THETA_LM_RAD);
+Ysrc_lm = R_LM .* sin(THETA_LM_RAD);
+
+xsrc_c = NaN(nL, nM, 4);
+ysrc_c = NaN(nL, nM, 4);
+zsrc_c = NaN(nL, nM, 4);
+
+for il = 1:nL
+    r1 = r_edges(il);
+    r2 = r_edges(il+1);
+
+    for im = 1:nM
+        th1 = theta_edges_deg(im);
+        th2 = theta_edges_deg(im+1);
+
+        rCorners  = [r1, r2, r2, r1];
+        thCorners = [th1, th1, th2, th2];
+
+        for ic = 1:4
+            xsrc_c(il,im,ic) = rCorners(ic) * cosd(thCorners(ic));
+            ysrc_c(il,im,ic) = rCorners(ic) * sind(thCorners(ic));
+            zsrc_c(il,im,ic) = z_source;
+        end
+    end
+end
+
+%% ------------------------------------------------------------------------
+% STEP 3. COMPUTE SOURCE-PLANE SURFACE HEAT FLUX FOR DIAGNOSTICS
+% -------------------------------------------------------------------------
+fprintf('Computing source-plane incidence and q_source_lm ...\n');
+
+br_src = FBr(R_LM, z_source * ones(size(R_LM)));
+bt_src = FBt(R_LM, z_source * ones(size(R_LM)));
+bz_src = FBz(R_LM, z_source * ones(size(R_LM)));
+
+Bmag_src = sqrt(br_src.^2 + bt_src.^2 + bz_src.^2);
+Bmag_src(Bmag_src < 1e-12) = 1e-12;
+
+sin_alpha_source = abs(bz_src) ./ Bmag_src;
+q_source_lm = q_parallel_lm .* sin_alpha_source;
+
+P_tube_lm = q_source_lm .* A_source_lm;
+A_perp_lm = A_source_lm .* sin_alpha_source;
+
+fprintf('Finite q_parallel_lm = %d / %d\n', sum(isfinite(q_parallel_lm(:))), numel(q_parallel_lm));
+fprintf('Max q_parallel_lm    = %.6e W/m^2\n', max(q_parallel_lm(:), [], 'omitnan'));
+fprintf('Max q_source_lm      = %.6e W/m^2\n', max(q_source_lm(:), [], 'omitnan'));
+
+%% ------------------------------------------------------------------------
+% STEP 4. TRACE PATCH CENTERS TO TARGET
+% -------------------------------------------------------------------------
+fprintf('Tracing patch centers to target ...\n');
+
+x_path = NaN(nL, nM, nStepsMax);
+y_path = NaN(nL, nM, nStepsMax);
+z_path = NaN(nL, nM, nStepsMax);
+
+x_target_lm = NaN(nL, nM);
+y_target_lm = NaN(nL, nM);
+r_target_lm = NaN(nL, nM);
+theta_target_deg_lm = NaN(nL, nM);
+
+for il = 1:nL
+    for im = 1:nM
+        [ok, xhit, yhit, ~, xpath, ypath, zpath_] = trace_point_to_target( ...
+            R_LM(il,im), THETA_LM_DEG(il,im), z_source, ...
+            FBr, FBt, FBz, r, z, z_target, dz_trace, nStepsMax, stop_if_outside_grid);
+
+        if ok
+            x_target_lm(il,im) = xhit;
+            y_target_lm(il,im) = yhit;
+            r_target_lm(il,im) = hypot(xhit, yhit);
+            theta_target_deg_lm(il,im) = mod(atan2d(yhit, xhit), 360);
+
+            ns = min(numel(xpath), nStepsMax);
+            x_path(il,im,1:ns) = xpath(1:ns);
+            y_path(il,im,1:ns) = ypath(1:ns);
+            z_path(il,im,1:ns) = zpath_(1:ns);
+        end
+    end
+end
+
+%% ------------------------------------------------------------------------
+% STEP 5. TRACE PATCH CORNERS TO TARGET
+% -------------------------------------------------------------------------
+fprintf('Tracing patch corners to target ...\n');
+
+xt_c = NaN(nL, nM, 4);
+yt_c = NaN(nL, nM, 4);
+zt_c = NaN(nL, nM, 4);
+patch_ok = false(nL, nM);
+fail_corner = NaN(nL, nM);
+
+for il = 1:nL
+    for im = 1:nM
+        ok_all = true;
+
+        for ic = 1:4
+            rc  = hypot(xsrc_c(il,im,ic), ysrc_c(il,im,ic));
+            thc = mod(atan2d(ysrc_c(il,im,ic), xsrc_c(il,im,ic)), 360);
+            zc  = zsrc_c(il,im,ic);
+
+            [ok, xhit, yhit, zhit] = trace_point_to_target( ...
+                rc, thc, zc, FBr, FBt, FBz, r, z, z_target, dz_trace, nStepsMax, stop_if_outside_grid);
+
+            if ~ok
+                ok_all = false;
+                fail_corner(il,im) = ic;
+                break;
+            end
+
+            xt_c(il,im,ic) = xhit;
+            yt_c(il,im,ic) = yhit;
+            zt_c(il,im,ic) = zhit;
+        end
+
+        patch_ok(il,im) = ok_all;
+    end
+end
+
+fprintf('Mapped target patches = %d / %d\n', nnz(patch_ok), numel(patch_ok));
+fprintf('Mapped target patches by l band:\n');
+disp(sum(patch_ok,2));
+
+%% ------------------------------------------------------------------------
+% STEP 6. COMPUTE TARGET SURFACE HEAT FLUX
+% -------------------------------------------------------------------------
+fprintf('Computing q_target_lm ...\n');
+
+sin_alpha_t = NaN(nL, nM);
+q_target_lm = NaN(nL, nM);
+
+for il = 1:nL
+    for im = 1:nM
+        if ~isfinite(r_target_lm(il,im))
+            continue;
+        end
+
+        br_t = FBr(r_target_lm(il,im), z_target);
+        bt_t = FBt(r_target_lm(il,im), z_target);
+        bz_t = FBz(r_target_lm(il,im), z_target);
+
+        if any(~isfinite([br_t, bt_t, bz_t]))
+            continue;
+        end
+
+        bmag_t = sqrt(br_t^2 + bt_t^2 + bz_t^2);
+        if bmag_t < 1e-12
+            continue;
+        end
+
+        sin_alpha_t(il,im) = abs(bz_t) / bmag_t;
+        q_target_lm(il,im) = q_parallel_lm(il,im) .* sin_alpha_t(il,im);
+    end
+end
+
+%% ------------------------------------------------------------------------
+% STEP 7. RASTERIZE TARGET PATCH POLYGONS
+% -------------------------------------------------------------------------
+fprintf('Rasterizing target polygons ...\n');
+
+xmin = min(xt_c(:), [], 'omitnan');
+xmax = max(xt_c(:), [], 'omitnan');
+ymin = min(yt_c(:), [], 'omitnan');
+ymax = max(yt_c(:), [], 'omitnan');
+
+pad = 0.002;
+xt_grid = linspace(xmin-pad, xmax+pad, nXt);
+yt_grid = linspace(ymin-pad, ymax+pad, nYt);
+[XTG, YTG] = meshgrid(xt_grid, yt_grid);
+
+q_target_sum   = zeros(nYt, nXt);
+q_target_count = zeros(nYt, nXt);
+P_target_sum   = zeros(nYt, nXt);
+
+for il = 1:nL
+    for im = 1:nM
+        if ~patch_ok(il,im) || ~isfinite(q_target_lm(il,im))
+            continue;
+        end
+
+        xv = squeeze(xt_c(il,im,:));
+        yv = squeeze(yt_c(il,im,:));
+
+        in = inpolygon(XTG, YTG, xv, yv);
+
+        q_target_sum(in)   = q_target_sum(in) + q_target_lm(il,im);
+        q_target_count(in) = q_target_count(in) + 1;
+        P_target_sum(in)   = P_target_sum(in) + P_tube_lm(il,im);
+    end
+end
+
+q_target_map = NaN(nYt, nXt);
+mask = q_target_count > 0;
+q_target_map(mask) = q_target_sum(mask) ./ q_target_count(mask);
+
+%% ------------------------------------------------------------------------
+% STEP 8. DIAGNOSTICS
+% -------------------------------------------------------------------------
+fprintf('Finite q_target_lm = %d / %d\n', sum(isfinite(q_target_lm(:))), numel(q_target_lm));
+fprintf('Max q_target_lm    = %.6e W/m^2\n', max(q_target_lm(:), [], 'omitnan'));
+fprintf('Max q_target_map   = %.6e W/m^2\n', max(q_target_map(:), [], 'omitnan'));
+
+fprintf('Target radius range by row:\n');
+for il = 1:nL
+    fprintf('row %d: min=%g max=%g mean=%g\n', il, ...
+        min(r_target_lm(il,:), [], 'omitnan'), ...
+        max(r_target_lm(il,:), [], 'omitnan'), ...
+        mean(r_target_lm(il,:), 'omitnan'));
+end
+
+%% ------------------------------------------------------------------------
+% STEP 9. PLOTS
+% -------------------------------------------------------------------------
+if makePlots
+    figure('Color','w','Position',[100 100 1100 420]);
+
+    subplot(1,2,1);
+    imagesc(theta_cent_deg, r_cent, q_parallel_lm);
+    set(gca,'YDir','normal');
+    xlabel('\theta [deg]');
+    ylabel('source annulus radius [m]');
+    title('Fixed parallel source Q_{\parallel,lm}');
+    colorbar;
+
+    subplot(1,2,2);
+    imagesc(theta_cent_deg, r_cent, q_source_lm);
+    set(gca,'YDir','normal');
+    xlabel('\theta [deg]');
+    ylabel('source annulus radius [m]');
+    title('Source-plane surface heat flux q_{source,lm}');
+    colorbar;
+
+    figure('Color','w');
+    hold on;
+    for il = 1:nL
+        for im = 1:nM
+            xv = squeeze(xsrc_c(il,im,:));
+            yv = squeeze(ysrc_c(il,im,:));
+            if all(isfinite(xv))
+                patch(xv, yv, q_source_lm(il,im), 'EdgeColor', 'none');
+            end
+        end
+    end
+    axis equal;
+    xlabel('x source [m]');
+    ylabel('y source [m]');
+    title('Annular source patches');
+    colorbar;
+    view(2);
+
+    figure('Color','w');
+    imagesc(theta_cent_deg, r_cent, patch_ok);
+    set(gca,'YDir','normal');
+    xlabel('\theta [deg]');
+    ylabel('source annulus radius [m]');
+    title('patch\_ok map');
+    colorbar;
+
+    figure('Color','w');
+    imagesc(theta_cent_deg, r_cent, fail_corner);
+    set(gca,'YDir','normal');
+    xlabel('\theta [deg]');
+    ylabel('source annulus radius [m]');
+    title('first failed corner index');
+    colorbar;
+
+    figure('Color','w');
+    imagesc(theta_cent_deg, r_cent, r_target_lm);
+    set(gca,'YDir','normal');
+    xlabel('\theta [deg]');
+    ylabel('source annulus radius [m]');
+    title('Mapped target radius r_T(l,m)');
+    colorbar;
+
+    figure('Color','w');
+    hold on;
+    for il = 1:nL
+        for im = 1:nM
+            if ~patch_ok(il,im) || ~isfinite(q_target_lm(il,im))
+                continue;
+            end
+            xv = squeeze(xt_c(il,im,:));
+            yv = squeeze(yt_c(il,im,:));
+            patch(xv, yv, q_target_lm(il,im), 'EdgeColor', 'none');
+        end
+    end
+    axis equal;
+    xlabel('x target [m]');
+    ylabel('y target [m]');
+    title('Connected target patches q_{target,lm}');
+    colorbar;
+    view(2);
+
+    figure('Color','w');
+    imagesc(xt_grid, yt_grid, q_target_map);
+    set(gca,'YDir','normal');
+    axis equal tight;
+    xlabel('x target [m]');
+    ylabel('y target [m]');
+    title('Continuous rasterized target heat-flux map');
+    colorbar;
+
+    if makeTrajectoryPlot
+        figure('Color','w');
+        hold on;
+        count = 0;
+        for il = 1:nL
+            for im = 1:nM
+                xx = squeeze(x_path(il,im,:));
+                yy = squeeze(y_path(il,im,:));
+                zz = squeeze(z_path(il,im,:));
+                good = isfinite(xx) & isfinite(yy) & isfinite(zz);
+                if any(good)
+                    plot3(xx(good), yy(good), zz(good), 'LineWidth', 1.0);
+                    count = count + 1;
+                end
+                if count >= nTrajToPlot
+                    break;
+                end
+            end
+            if count >= nTrajToPlot
+                break;
+            end
+        end
+        xlabel('x [m]');
+        ylabel('y [m]');
+        zlabel('z [m]');
+        title('Connected source-to-target flux-tube trajectories');
+        grid on;
+        axis equal;
+        view(3);
+    end
+end
+
+%% ------------------------------------------------------------------------
+% STEP 10. SAVE OUTPUT
+% -------------------------------------------------------------------------
+fprintf('Writing %s ...\n', outFile);
+
+if exist(outFile, 'file')
+    delete(outFile);
+end
+
+nccreate(outFile, 'r', 'Dimensions', {'r', nR});
+nccreate(outFile, 'z', 'Dimensions', {'z', nZ});
+nccreate(outFile, 'theta_cent_deg', 'Dimensions', {'m', nM});
+nccreate(outFile, 'r_cent', 'Dimensions', {'l', nL});
+
+nccreate(outFile, 'q_parallel_lm', 'Dimensions', {'l', nL, 'm', nM});
+nccreate(outFile, 'q_source_lm', 'Dimensions', {'l', nL, 'm', nM});
+nccreate(outFile, 'sin_alpha_source', 'Dimensions', {'l', nL, 'm', nM});
+nccreate(outFile, 'P_tube_lm', 'Dimensions', {'l', nL, 'm', nM});
+nccreate(outFile, 'A_source_lm', 'Dimensions', {'l', nL, 'm', nM});
+nccreate(outFile, 'A_perp_lm', 'Dimensions', {'l', nL, 'm', nM});
+
+nccreate(outFile, 'q_target_lm', 'Dimensions', {'l', nL, 'm', nM});
+nccreate(outFile, 'sin_alpha_t', 'Dimensions', {'l', nL, 'm', nM});
+nccreate(outFile, 'q_target_map', 'Dimensions', {'y_t', nYt, 'x_t', nXt});
+nccreate(outFile, 'xt_grid', 'Dimensions', {'x_t', nXt});
+nccreate(outFile, 'yt_grid', 'Dimensions', {'y_t', nYt});
+
+ncwrite(outFile, 'r', r);
+ncwrite(outFile, 'z', z);
+ncwrite(outFile, 'theta_cent_deg', theta_cent_deg);
+ncwrite(outFile, 'r_cent', r_cent);
+
+ncwrite(outFile, 'q_parallel_lm', q_parallel_lm);
+ncwrite(outFile, 'q_source_lm', q_source_lm);
+ncwrite(outFile, 'sin_alpha_source', sin_alpha_source);
+ncwrite(outFile, 'P_tube_lm', P_tube_lm);
+ncwrite(outFile, 'A_source_lm', A_source_lm);
+ncwrite(outFile, 'A_perp_lm', A_perp_lm);
+
+ncwrite(outFile, 'q_target_lm', q_target_lm);
+ncwrite(outFile, 'sin_alpha_t', sin_alpha_t);
+ncwrite(outFile, 'q_target_map', q_target_map);
+ncwrite(outFile, 'xt_grid', xt_grid);
+ncwrite(outFile, 'yt_grid', yt_grid);
+
+fprintf('Done.\n');
+
+%% ========================================================================
+% LOCAL FUNCTION
+% ========================================================================
+function [ok, xhit, yhit, zhit, xpath, ypath, zpath_] = trace_point_to_target( ...
+    r0, th0_deg, z0, FBr, FBt, FBz, r_grid, z_grid, z_target, dz_trace, nStepsMax, stop_if_outside_grid)
+
+    ok = false;
+    xhit = NaN; yhit = NaN; zhit = NaN;
+    xpath = NaN(1, nStepsMax);
+    ypath = NaN(1, nStepsMax);
+    zpath_ = NaN(1, nStepsMax);
+
+    r_now = r0;
+    th_now_deg = th0_deg;
+    z_now = z0;
+
+    xpath(1) = r_now * cosd(th_now_deg);
+    ypath(1) = r_now * sind(th_now_deg);
+    zpath_(1) = z_now;
+
+    step_sign = sign(z_target - z_now);
+    if step_sign == 0
+        xhit = r_now * cosd(th_now_deg);
+        yhit = r_now * sind(th_now_deg);
+        zhit = z_now;
+        ok = true;
+        return;
+    end
+
+    dz_local = step_sign * abs(dz_trace);
+
+    for is = 2:nStepsMax
+        br_now = FBr(r_now, z_now);
+        bt_now = FBt(r_now, z_now);
+        bz_now = FBz(r_now, z_now);
+
+        if any(~isfinite([br_now, bt_now, bz_now])) || abs(bz_now) < 1e-12
+            return;
+        end
+
+        dr_dz = br_now / bz_now;
+        dtheta_dz_rad = bt_now / max(r_now, 1e-8) / bz_now;
+
+        r_next = r_now + dr_dz * dz_local;
+        th_next_deg = mod(th_now_deg + rad2deg(dtheta_dz_rad * dz_local), 360);
+        z_next = z_now + dz_local;
+
+        crossed = (step_sign > 0 && z_now < z_target && z_next >= z_target) || ...
+                  (step_sign < 0 && z_now > z_target && z_next <= z_target);
+
+        if crossed
+            f = (z_target - z_now) / (z_next - z_now);
+            r_hit = r_now + f * (r_next - r_now);
+            th_hit = mod(th_now_deg + f * (th_next_deg - th_now_deg), 360);
+
+            xhit = r_hit * cosd(th_hit);
+            yhit = r_hit * sind(th_hit);
+            zhit = z_target;
+
+            xpath(is) = xhit;
+            ypath(is) = yhit;
+            zpath_(is) = zhit;
+            ok = true;
+            return;
+        end
+
+        if stop_if_outside_grid
+            if r_next < min(r_grid) || r_next > max(r_grid) || ...
+               z_next < min(z_grid) || z_next > max(z_grid)
+                return;
+            end
+        end
+
+        r_now = r_next;
+        th_now_deg = th_next_deg;
+        z_now = z_next;
+
+        xpath(is) = r_now * cosd(th_now_deg);
+        ypath(is) = r_now * sind(th_now_deg);
+        zpath_(is) = z_now;
+    end
+end

@@ -5,6 +5,7 @@
 *.tif
 *.nc
 *.nc
+*.mat
 
 # Ignore large data
 *.nc

@@ -98,17 +98,26 @@ z1D = linspace(z_Dump,z_Target,500);
 
 % % MPEX-like limiter: case 6 ( EC+Impurity case 05/06/2020, Shot #: 30000)
 % coilCurrents{1}.TR1 = 530;
-% coilCurrents{1}.TR2 = 2300;
-% coilCurrents{1}.PS1 = 3500;
-% coilCurrents{1}.PS2 = 4000;
+% coilCurrents{1}.TR2 = 2100;
+% coilCurrents{1}.PS1 = 6800;
+% coilCurrents{1}.PS2 = 3500;
 % coilCurrents{1}.PS3 = 400;
+
 % 
-%% MPEX AI Digital Twin (  02/14/2020, Shot #: 29128)
+%% MPEX AI Digital Twin Shot Series:1-4 Limiter limited  (02/14/2020, Shot #: 29082)
+% coilCurrents{1}.TR1 = 530;
+% coilCurrents{1}.TR2 = 2300;
+% coilCurrents{1}.PS1 = 4500;
+% coilCurrents{1}.PS2 = 3500;
+% coilCurrents{1}.PS3 = 430;
+
+%% MPEX AI Digital Twin Shot Series:5-8 Winodow limited (02/14/2020, Shot #: 29128)
 coilCurrents{1}.TR1 = 530;
-coilCurrents{1}.TR2 = 2100;
+coilCurrents{1}.TR2 = 2300;
 coilCurrents{1}.PS1 = 6800;
-coilCurrents{1}.PS2 = 3500;
-coilCurrents{1}.PS3 = 430;
+coilCurrents{1}.PS2 = 4000;
+coilCurrents{1}.PS3 = 160;
+
 
 % ii = 1;
 % coilCurrents{ii}.TR1 = 600;
@@ -349,7 +358,7 @@ hold off
 % xlabel('$z$ [m]','interpreter','latex','fontSize',24)
 % xlim([0.5 4.2])
 % 
-% disp('Calculated the B-field profile');
+disp('Wrote the B-field file');
 
 %%
 file = 'bfield_protoMPEX.nc';

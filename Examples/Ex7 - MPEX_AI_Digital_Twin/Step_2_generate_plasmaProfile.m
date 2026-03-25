@@ -83,8 +83,8 @@ qe  = 1.602176634e-19;      % [C]
 % Te(psiN > 1) = te_max;   % flatten beyond LCFS
 
 % --------- Te: max in core, lower at LCFS, then exponential falloff ----------
-Te0       = 2.5;      % eV at core (psiN=0)  <-- MAX
-Te_edge   = 5;      % eV at LCFS (psiN=1)
+Te0       = 2;      % eV at core (psiN=0)  <-- MAX
+Te_edge   = 8;      % eV at LCFS (psiN=1)
 Te_floor  = 0.2;    % eV far outside
 alpha     = 1.75;   % core shaping
 lambdaPsi = 0.15;   % SOL falloff width (smaller = steeper)
@@ -104,14 +104,14 @@ gasPuff_Gps = 1.0e20;   % gas puff/source rate [particles/s]
 PRF_kW      = 180.0;     % coupled RF power [kW]
 
 Eion_eV     = 1.0e3;    % ionization cost [eV/pair]
-ne_cap      = 8.0E19;   % target max density [m^-3]
+ne_cap      = 1E20;   % target max density [m^-3]
 
 % RF power required to sustain source rate G at the ionization cost
 Preq_kW = gasPuff_Gps * Eion_eV * qe / 1e3;
 powerFactor = min(PRF_kW / max(Preq_kW,1e-12), 1.0);  % saturates at 1
 
 % User-fixed density target
-ne_min = 1.0E18;  % m^-3
+ne_min = 1.0E16;  % m^-3
 ne_max = ne_cap;  % user-fixed target
 ne_max = min(max(ne_max, 5.0E18), 5.0E20);  % safety bounds
 
