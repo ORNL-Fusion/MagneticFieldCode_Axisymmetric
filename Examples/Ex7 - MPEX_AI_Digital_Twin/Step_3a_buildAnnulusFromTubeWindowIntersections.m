@@ -412,93 +412,93 @@ end
 
 fprintf('Chosen center mean for fill            = %.6e W/m^2\n', q_center_mean);
 
-%% ------------------------------------------------------------------------
-% STEP 6. FILL CENTRAL REGION
-% -------------------------------------------------------------------------
-fprintf('Filling central region using %s ...\n', fillMode);
-
-r_meas_anchor = r_cent_in(anchorMeasuredRow);
-
-for il = 1:nL_full
-    if ~innerMaskRows(il)
-        continue;
-    end
-
-    r_now = r_cent_full(il);
-
-    if r_meas_anchor > 0
-        xi = r_now / r_meas_anchor;
-    else
-        xi = 0;
-    end
-    xi = max(0, min(1, xi));
-
-    switch lower(fillMode)
-        case 'flat_to_center'
-            q_mean_now = q_anchor_fill_mean;
-
-        case 'linear_to_center'
-            q_mean_now = q_center_mean + (q_anchor_fill_mean - q_center_mean) * xi;
-
-        case 'parabolic_to_center'
-            q_mean_now = q_center_mean + (q_anchor_fill_mean - q_center_mean) * xi^2;
-
-        case 'exp_to_center'
-            beta = 3.0;
-            q_mean_now = q_center_mean + (q_anchor_fill_mean - q_center_mean) * ...
-                         (exp(beta*xi) - 1) / (exp(beta) - 1);
-
-        otherwise
-            error('Unknown fillMode: %s', fillMode);
-    end
-
-    rowVals = q_mean_now * thetaPattern;
-    rowVals(~isfinite(rowVals)) = q_mean_now;
-    rowVals(rowVals < 0) = 0;
-
-    Q_parallel_full_lm(il,:) = rowVals;
-end
-
-%% ------------------------------------------------------------------------
-% STEP 7. FILL ANY REMAINING NaNs
-% -------------------------------------------------------------------------
-fprintf('Filling any remaining NaNs ...\n');
-
-for im = 1:nM
-    col = Q_parallel_full_lm(:,im);
-    valid = isfinite(col);
-
-    if all(~valid)
-        error('Column %d has no valid values after fill.', im);
-    end
-
-    if any(~valid)
-        validRows = find(valid);
-        for il = find(~valid).'
-            [~, idx] = min(abs(validRows - il));
-            col(il) = col(validRows(idx));
-        end
-    end
-
-    Q_parallel_full_lm(:,im) = col;
-end
-
-%% ------------------------------------------------------------------------
-% STEP 8. OPTIONAL RADIAL SMOOTHING OF FINAL FULL MAP
-% -------------------------------------------------------------------------
-if doRadialSmooth
-    fprintf('Applying radial smoothing ...\n');
-    for pass = 1:smoothPasses
-        Qtmp = Q_parallel_full_lm;
-        for il = 2:nL_full-1
-            Qtmp(il,:) = 0.25 * Q_parallel_full_lm(il-1,:) + ...
-                         0.50 * Q_parallel_full_lm(il,:)   + ...
-                         0.25 * Q_parallel_full_lm(il+1,:);
-        end
-        Q_parallel_full_lm = Qtmp;
-    end
-end
-
+% %% ------------------------------------------------------------------------
+% % STEP 6. FILL CENTRAL REGION
+% % -------------------------------------------------------------------------
+% fprintf('Filling central region using %s ...\n', fillMode);
+% 
+% r_meas_anchor = r_cent_in(anchorMeasuredRow);
+% 
+% for il = 1:nL_full
+%     if ~innerMaskRows(il)
+%         continue;
+%     end
+% 
+%     r_now = r_cent_full(il);
+% 
+%     if r_meas_anchor > 0
+%         xi = r_now / r_meas_anchor;
+%     else
+%         xi = 0;
+%     end
+%     xi = max(0, min(1, xi));
+% 
+%     switch lower(fillMode)
+%         case 'flat_to_center'
+%             q_mean_now = q_anchor_fill_mean;
+% 
+%         case 'linear_to_center'
+%             q_mean_now = q_center_mean + (q_anchor_fill_mean - q_center_mean) * xi;
+% 
+%         case 'parabolic_to_center'
+%             q_mean_now = q_center_mean + (q_anchor_fill_mean - q_center_mean) * xi^2;
+% 
+%         case 'exp_to_center'
+%             beta = 3.0;
+%             q_mean_now = q_center_mean + (q_anchor_fill_mean - q_center_mean) * ...
+%                          (exp(beta*xi) - 1) / (exp(beta) - 1);
+% 
+%         otherwise
+%             error('Unknown fillMode: %s', fillMode);
+%     end
+% 
+%     rowVals = q_mean_now * thetaPattern;
+%     rowVals(~isfinite(rowVals)) = q_mean_now;
+%     rowVals(rowVals < 0) = 0;
+% 
+%     Q_parallel_full_lm(il,:) = rowVals;
+% end
+% 
+% %% ------------------------------------------------------------------------
+% % STEP 7. FILL ANY REMAINING NaNs
+% % -------------------------------------------------------------------------
+% fprintf('Filling any remaining NaNs ...\n');
+% 
+% for im = 1:nM
+%     col = Q_parallel_full_lm(:,im);
+%     valid = isfinite(col);
+% 
+%     if all(~valid)
+%         error('Column %d has no valid values after fill.', im);
+%     end
+% 
+%     if any(~valid)
+%         validRows = find(valid);
+%         for il = find(~valid).'
+%             [~, idx] = min(abs(validRows - il));
+%             col(il) = col(validRows(idx));
+%         end
+%     end
+% 
+%     Q_parallel_full_lm(:,im) = col;
+% end
+% 
+% %% ------------------------------------------------------------------------
+% % STEP 8. OPTIONAL RADIAL SMOOTHING OF FINAL FULL MAP
+% % -------------------------------------------------------------------------
+% if doRadialSmooth
+%     fprintf('Applying radial smoothing ...\n');
+%     for pass = 1:smoothPasses
+%         Qtmp = Q_parallel_full_lm;
+%         for il = 2:nL_full-1
+%             Qtmp(il,:) = 0.25 * Q_parallel_full_lm(il-1,:) + ...
+%                          0.50 * Q_parallel_full_lm(il,:)   + ...
+%                          0.25 * Q_parallel_full_lm(il+1,:);
+%         end
+%         Q_parallel_full_lm = Qtmp;
+%     end
+% end
+% 
 %% ------------------------------------------------------------------------
 % STEP 9. BUILD FULL SOURCE PATCH AREAS
 % -------------------------------------------------------------------------
