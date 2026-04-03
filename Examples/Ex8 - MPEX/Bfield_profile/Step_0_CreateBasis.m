@@ -12,7 +12,7 @@
  close all
  clc
   
- compute = 0;
+ compute = 1;
 
 if compute
     t2 = tic;

@@ -12,7 +12,7 @@ saveFig  = 1;
 
 % Load magnetic field basis:
 % =========================================================================
-fileName = 'Step_0_MagneticField_Basis_05-Apr-2021';
+fileName = 'MagneticField_Basis_03-Apr-2026';
 load(fileName);
     
 % Select file containing the coil currents:
