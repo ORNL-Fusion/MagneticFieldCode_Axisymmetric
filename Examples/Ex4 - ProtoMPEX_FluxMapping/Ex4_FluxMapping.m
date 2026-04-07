@@ -26,7 +26,7 @@ confType = 'conf_G';
 
 % Assignment of currents per power supply:
 % =========================================================================
-limitType = 5;
+limitType = 2;
 switch limitType
     case 1 % MPEX-like limiter
         coilCurrents.TR1 = 530;
