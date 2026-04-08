@@ -1,6 +1,13 @@
-% Ex_FluxMapping_MPEX_careful
-% Original MPEX workflow; reads the vacuum-vessel
-% coordinates from MPEX_innerbound.xlsx.
+% Step_1b_FluxMapping_MPEX
+% MPEX flux mapping using either:
+%   (1) wall-limited reference (last uninterrupted / last wall-avoiding surface),
+%   (2) window/source referenced flux tubes,
+%   (3) or both.
+%
+% Reference choice:
+%   fluxReferenceMode = 'wall'   -> only plot the last uninterrupted wall-limited contour
+%   fluxReferenceMode = 'window' -> only plot source/window-referenced flux tubes
+%   fluxReferenceMode = 'both'   -> plot both
 
 clearvars
 close all
@@ -12,6 +19,9 @@ scenarioIndex = 14;
 makeNetCDF    = true;
 saveFigure    = false;
 
+% Choose what to plot: 'wall', 'window', or 'both'
+fluxReferenceMode = 'wall';
+
 % Computational domain [m]
 zMin = -3.3;
 zMax =  8.2;
@@ -19,12 +29,12 @@ rMax =  0.42;
 Nz   = 900;
 Nr   = 320;
 
-% Flux-tube contour levels referenced to the source/window edge.
+% Window/source referenced contour levels
 xi_lines = [0.15 0.30 0.45 0.60 0.75 0.90 1.00];
-
-% false = also show LCFS-like contour from wall contact
-plotWindowMappingOnly = true;
 %% ------------------------------------------------------------------------
+
+showWindowFlux = any(strcmpi(fluxReferenceMode, {'window','both'}));
+showWallFlux   = any(strcmpi(fluxReferenceMode, {'wall','both'}));
 
 %% SECTION 1: Read MPEX coil setup
 coilSetup = readtable('CoilSetup_MPEX.xlsx', 'Sheet', confType);
@@ -57,15 +67,13 @@ coil = CreateCoilStructure(coilSetup, coilCurrents);
 
 r1D = linspace(1e-5, rMax, Nr);
 z1D = linspace(zMin,  zMax, Nz);
-[Br2D, Bz2D, Atheta2D, phi2D, z2D, r2D] = CalculateMagField(coil, z1D, r1D, 'grid');
+[Br2D, Bz2D, Atheta2D, phi2D, z2D, r2D] = CalculateMagField(coil, z1D, r1D, 'grid'); 
 B2D = sqrt(Br2D.^2 + Bz2D.^2);
 
 %% SECTION 4: Read vacuum vessel / source window / target geometry carefully
 [vessel, window, target, vessel_raw] = Step_0a_DrawVacuumVessel_MPEX('MPEX_innerbound.xlsx', false);
 
 %% SECTION 5: Wall-limited reference flux (LCFS-like boundary)
-% Interpolate flux only along the upper wall branch, since the field grid is
-% defined for r >= 0.
 phiWall = interp2(z1D, r1D, phi2D', vessel.z, vessel.r, 'linear', NaN);
 valid   = isfinite(phiWall);
 phiWall(~valid) = inf;
@@ -75,30 +83,35 @@ limitPoint.z = vessel.z(idxWall);
 limitPoint.r = vessel.r(idxWall);
 
 xi_wall = phi2D / phiWallMin;
-
-%% SECTION 6: Window-referenced flux-tube mapping
-phiWindowEdge = interp2(z1D, r1D, phi2D', window.z, window.r, 'linear');
-if ~isfinite(phiWindowEdge)
-    error(['Window reference point lies outside the field grid. ' ...
-           'Increase domain or adjust window.z/window.r.']);
-end
-xi_window = phi2D / phiWindowEdge;
-
-zFlux = cell(1, numel(xi_lines));
-rFlux = cell(1, numel(xi_lines));
-for jj = 1:numel(xi_lines)
-    C = contourc(z1D, r1D, xi_window', [xi_lines(jj) xi_lines(jj)]);
-    [zFlux{jj}, rFlux{jj}] = localParseContourMatrix(C);
-end
-
 Cwall = contourc(z1D, r1D, xi_wall', [1 1]);
 [zWallFlux, rWallFlux] = localParseContourMatrix(Cwall);
+
+%% SECTION 6: Window-referenced flux-tube mapping
+zFlux = {};
+rFlux = {};
+phiWindowEdge = NaN;
+xi_window = nan(size(phi2D));
+if showWindowFlux
+    phiWindowEdge = interp2(z1D, r1D, phi2D', window.z, window.r, 'linear');
+    if ~isfinite(phiWindowEdge)
+        error(['Window reference point lies outside the field grid. ' ...
+               'Increase domain or adjust window.z/window.r.']);
+    end
+    xi_window = phi2D / phiWindowEdge;
+
+    zFlux = cell(1, numel(xi_lines));
+    rFlux = cell(1, numel(xi_lines));
+    for jj = 1:numel(xi_lines)
+        C = contourc(z1D, r1D, xi_window', [xi_lines(jj) xi_lines(jj)]);
+        [zFlux{jj}, rFlux{jj}] = localParseContourMatrix(C);
+    end
+end
 
 %% SECTION 7: Plot flux mapping + B field
 figure('Color', 'w', 'Name', 'MPEX flux mapping and B field');
 
 % ---------------- Top subplot: geometry + flux tubes ----------------
-ax1 = subplot(2,1,1); 
+ax1 = subplot(2,1,1);
 hold(ax1, 'on')
 
 % Coils
@@ -109,59 +122,54 @@ for ii = 2:numel(coil)
     plot(ax1, coil{ii}.zfil, -coil{ii}.rfil, 'r.', 'HandleVisibility', 'off');
 end
 
-% Vessel inner boundary (upper branch mirrored for plotting)
+% Vessel
 hVessel = plot(ax1, vessel.z,  vessel.r, 'k-', 'LineWidth', 1.5, 'DisplayName', 'vessel');
 plot(ax1, vessel.z, -vessel.r, 'k-', 'LineWidth', 1.5, 'HandleVisibility', 'off');
 
 % Window marker
-hWindow = plot(ax1, window.z,  window.r, 'bo', 'MarkerFaceColor', 'b', ...
-    'DisplayName', 'window ref');
+hWindow = plot(ax1, window.z,  window.r, 'bo', 'MarkerFaceColor', 'b', 'DisplayName', 'window ref');
 plot(ax1, window.z, -window.r, 'bo', 'MarkerFaceColor', 'b', 'HandleVisibility', 'off');
-plot(ax1, [window.z window.z], [-window.r window.r], 'b--', 'LineWidth', 1.2, ...
-    'HandleVisibility', 'off');
+plot(ax1, [window.z window.z], [-window.r window.r], 'b--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
 
 % Target plane
-hTarget = plot(ax1, [target.z target.z], [-target.r target.r], 'k-', 'LineWidth', 3, ...
-    'DisplayName', 'target');
+hTarget = plot(ax1, [target.z target.z], [-target.r target.r], 'k-', 'LineWidth', 3, 'DisplayName', 'target');
 
 % Window-referenced flux tubes
-hFlux = gobjects(1);
+hFlux = [];
 gotFluxHandle = false;
-for jj = 1:numel(zFlux)
-    for kk = 1:numel(zFlux{jj})
-        htmp = plot(ax1, zFlux{jj}{kk},  rFlux{jj}{kk}, 'b-', 'LineWidth', 1.0);
-        plot(ax1, zFlux{jj}{kk}, -rFlux{jj}{kk}, 'b-', 'LineWidth', 1.0, ...
-            'HandleVisibility', 'off');
-        if ~gotFluxHandle
-            hFlux = htmp;
-            set(hFlux, 'DisplayName', 'flux tubes');
-            gotFluxHandle = true;
-        else
-            set(htmp, 'HandleVisibility', 'off');
+if showWindowFlux
+    for jj = 1:numel(zFlux)
+        for kk = 1:numel(zFlux{jj})
+            htmp = plot(ax1, zFlux{jj}{kk},  rFlux{jj}{kk}, 'b-', 'LineWidth', 1.0);
+            plot(ax1, zFlux{jj}{kk}, -rFlux{jj}{kk}, 'b-', 'LineWidth', 1.0, 'HandleVisibility', 'off');
+            if ~gotFluxHandle
+                hFlux = htmp;
+                set(hFlux, 'DisplayName', 'window flux tubes');
+                gotFluxHandle = true;
+            else
+                set(htmp, 'HandleVisibility', 'off');
+            end
         end
     end
 end
 
-% Optional wall-limited contour
-if ~plotWindowMappingOnly
-    hWall = gobjects(1);
-    gotWallHandle = false;
+% Wall-limited contour = last uninterrupted wall-avoiding surface
+hWall = [];
+gotWallHandle = false;
+if showWallFlux
     for kk = 1:numel(zWallFlux)
         htmp = plot(ax1, zWallFlux{kk},  rWallFlux{kk}, 'm-', 'LineWidth', 2.0);
-        plot(ax1, zWallFlux{kk}, -rWallFlux{kk}, 'm-', 'LineWidth', 2.0, ...
-            'HandleVisibility', 'off');
+        plot(ax1, zWallFlux{kk}, -rWallFlux{kk}, 'm-', 'LineWidth', 2.0, 'HandleVisibility', 'off');
         if ~gotWallHandle
             hWall = htmp;
-            set(hWall, 'DisplayName', 'wall-limited contour');
+            set(hWall, 'DisplayName', 'last uninterrupted surface');
             gotWallHandle = true;
         else
             set(htmp, 'HandleVisibility', 'off');
         end
     end
-    plot(ax1, limitPoint.z,  limitPoint.r, 'mo', 'MarkerFaceColor', 'm', ...
-        'HandleVisibility', 'off');
-    plot(ax1, limitPoint.z, -limitPoint.r, 'mo', 'MarkerFaceColor', 'm', ...
-        'HandleVisibility', 'off');
+    plot(ax1, limitPoint.z,  limitPoint.r, 'mo', 'MarkerFaceColor', 'm', 'HandleVisibility', 'off');
+    plot(ax1, limitPoint.z, -limitPoint.r, 'mo', 'MarkerFaceColor', 'm', 'HandleVisibility', 'off');
 end
 
 box(ax1, 'on')
@@ -171,34 +179,27 @@ ylabel(ax1, 'r [m]')
 title(ax1, sprintf('MPEX flux-tube mapping, scenario %d', scenarioIndex))
 xlim(ax1, [zMin zMax])
 ylim(ax1, [-rMax rMax])
-
-% Keep geometric proportions in r-z while preserving shared x alignment
 pbaspect(ax1, [(zMax-zMin) (2*rMax) 1])
 
-% Build legend handles safely as scalars
+% Legend handles
+legHandles = [hCoil(1) hVessel(1)];
+legLabels  = {'coil filaments', 'vessel'};
 if gotFluxHandle
-    hFluxLegend = hFlux(1);
-else
-    hFluxLegend = plot(ax1, nan, nan, 'b-', 'LineWidth', 1.0, ...
-        'DisplayName', 'flux tubes');
+    legHandles = [legHandles hFlux(1)];
+    legLabels  = [legLabels {'window flux tubes'}];
 end
-
-if ~plotWindowMappingOnly && gotWallHandle
-    hWallLegend = hWall(1);
-    legHandles = [hCoil(1) hVessel(1) hFluxLegend hWindow(1) hTarget(1) hWallLegend];
-    legLabels  = {'coil filaments', 'vessel', 'flux tubes', 'window ref', 'target', 'wall-limited contour'};
-else
-    legHandles = [hCoil(1) hVessel(1) hFluxLegend hWindow(1) hTarget(1)];
-    legLabels  = {'coil filaments', 'vessel', 'flux tubes', 'window ref', 'target'};
+legHandles = [legHandles hWindow(1) hTarget(1)];
+legLabels  = [legLabels {'window ref', 'target'}];
+if gotWallHandle
+    legHandles = [legHandles hWall(1)];
+    legLabels  = [legLabels {'last uninterrupted surface'}];
 end
-
 legend(ax1, legHandles, legLabels, 'Location', 'eastoutside');
 
 % ---------------- Bottom subplot: on-axis B field ----------------
-ax2 = subplot(2,1,2); 
+ax2 = subplot(2,1,2);
 hold(ax2, 'on')
-
-hB = plot(ax2, z1D, B2D(:,1), 'k-', 'LineWidth', 2);
+plot(ax2, z1D, B2D(:,1), 'k-', 'LineWidth', 2);
 
 yl = [min(B2D(:,1)) max(B2D(:,1))];
 if diff(yl) <= 0
@@ -211,6 +212,9 @@ ylim(ax2, yl)
 
 plot(ax2, [window.z window.z], yl, 'b--', 'LineWidth', 1.0, 'HandleVisibility', 'off');
 plot(ax2, [target.z target.z], yl, 'r--', 'LineWidth', 1.0, 'HandleVisibility', 'off');
+if gotWallHandle
+    plot(ax2, [limitPoint.z limitPoint.z], yl, 'm--', 'LineWidth', 1.0, 'HandleVisibility', 'off');
+end
 
 box(ax2, 'on')
 grid(ax2, 'on')
@@ -219,43 +223,119 @@ ylabel(ax2, '|B|(r = 0) [T]')
 title(ax2, 'On-axis magnetic field magnitude')
 xlim(ax2, [zMin zMax])
 
-% --- Tighten vertical spacing ---
-ax1 = subplot(2,1,1);
-ax2 = subplot(2,1,2);
-
-% Get current positions
-pos1 = get(ax1,'Position');
-pos2 = get(ax2,'Position');
-
-% Adjust heights and spacing
-gap = 0.04;        % vertical gap (smaller = tighter)
-height = 0.42;     % height of each subplot
-
-pos1(2) = 0.55;    % top plot vertical position
-pos1(4) = height;
-
-pos2(2) = pos1(2) - height - gap;
-pos2(4) = height;
-
-% Keep same width
-pos2(1) = pos1(1);
-pos2(3) = pos1(3);
-
-set(ax1,'Position',pos1)
-set(ax2,'Position',pos2)
-
-% ---------------- Align the two plots in z ----------------
+% Tight spacing and x alignment
 linkaxes([ax1 ax2], 'x');
+set(ax1, 'Position', [0.08 0.56 0.80 0.34]);
+set(ax2, 'Position', [0.08 0.10 0.80 0.34]);
 
-% Force same drawable width so window/target lines align visually
-ax1Pos = get(ax1, 'Position');
-ax2Pos = get(ax2, 'Position');
-left   = max(ax1Pos(1), ax2Pos(1));
-width  = min(ax1Pos(3), ax2Pos(3));
-ax1Pos(1) = left; ax1Pos(3) = width;
-ax2Pos(1) = left; ax2Pos(3) = width;
-set(ax1, 'Position', ax1Pos)
-set(ax2, 'Position', ax2Pos)
+%%
+%% SECTION 7: Plot flux mapping (single plot)
+figure('Color', 'w', 'Name', 'MPEX flux mapping');
+
+ax1 = axes;
+hold(ax1, 'on')
+
+% ---------------- Coils ----------------
+hCoil = plot(ax1, coil{1}.zfil, coil{1}.rfil, 'r.', ...
+    'DisplayName', 'coil filaments');
+plot(ax1, coil{1}.zfil, -coil{1}.rfil, 'r.', 'HandleVisibility', 'off');
+
+for ii = 2:numel(coil)
+    plot(ax1, coil{ii}.zfil,  coil{ii}.rfil, 'r.', 'HandleVisibility', 'off');
+    plot(ax1, coil{ii}.zfil, -coil{ii}.rfil, 'r.', 'HandleVisibility', 'off');
+end
+
+% ---------------- Vessel ----------------
+hVessel = plot(ax1, vessel.z,  vessel.r, 'k-', 'LineWidth', 1.5, ...
+    'DisplayName', 'vessel');
+plot(ax1, vessel.z, -vessel.r, 'k-', 'LineWidth', 1.5, ...
+    'HandleVisibility', 'off');
+
+% ---------------- Window marker ----------------
+hWindow = plot(ax1, window.z,  window.r, 'bo', ...
+    'MarkerFaceColor', 'b', 'DisplayName', 'window ref');
+plot(ax1, window.z, -window.r, 'bo', ...
+    'MarkerFaceColor', 'b', 'HandleVisibility', 'off');
+plot(ax1, [window.z window.z], [-window.r window.r], 'b--', ...
+    'LineWidth', 1.2, 'HandleVisibility', 'off');
+
+% ---------------- Target plane ----------------
+hTarget = plot(ax1, [target.z target.z], [-target.r target.r], 'k-', ...
+    'LineWidth', 3, 'DisplayName', 'target');
+
+% ---------------- Window-referenced flux tubes ----------------
+hFlux = [];
+gotFluxHandle = false;
+if showWindowFlux
+    for jj = 1:numel(zFlux)
+        for kk = 1:numel(zFlux{jj})
+            htmp = plot(ax1, zFlux{jj}{kk},  rFlux{jj}{kk}, 'b-', 'LineWidth', 1.0);
+            plot(ax1, zFlux{jj}{kk}, -rFlux{jj}{kk}, 'b-', 'LineWidth', 1.0, ...
+                'HandleVisibility', 'off');
+
+            if ~gotFluxHandle
+                hFlux = htmp;
+                set(hFlux, 'DisplayName', 'window flux tubes');
+                gotFluxHandle = true;
+            else
+                set(htmp, 'HandleVisibility', 'off');
+            end
+        end
+    end
+end
+
+% ---------------- Wall-limited contour ----------------
+hWall = [];
+gotWallHandle = false;
+if showWallFlux
+    for kk = 1:numel(zWallFlux)
+        htmp = plot(ax1, zWallFlux{kk},  rWallFlux{kk}, 'm-', 'LineWidth', 2.0);
+        plot(ax1, zWallFlux{kk}, -rWallFlux{kk}, 'm-', 'LineWidth', 2.0, ...
+            'HandleVisibility', 'off');
+
+        if ~gotWallHandle
+            hWall = htmp;
+            set(hWall, 'DisplayName', 'last uninterrupted surface');
+            gotWallHandle = true;
+        else
+            set(htmp, 'HandleVisibility', 'off');
+        end
+    end
+
+    plot(ax1, limitPoint.z,  limitPoint.r, 'mo', 'MarkerFaceColor', 'm', ...
+        'HandleVisibility', 'off');
+    plot(ax1, limitPoint.z, -limitPoint.r, 'mo', 'MarkerFaceColor', 'm', ...
+        'HandleVisibility', 'off');
+end
+
+% ---------------- Axes formatting ----------------
+box(ax1, 'on')
+grid(ax1, 'on')
+xlabel(ax1, 'z [m]')
+ylabel(ax1, 'r [m]')
+title(ax1, sprintf('MPEX flux-tube mapping, scenario %d', scenarioIndex))
+xlim(ax1, [zMin zMax])
+ylim(ax1, [-rMax rMax])
+pbaspect(ax1, [(zMax-zMin) (2*rMax) 1])
+
+% ---------------- Legend ----------------
+legHandles = [hCoil(1) hVessel(1)];
+legLabels  = {'coil filaments', 'vessel'};
+
+if gotFluxHandle
+    legHandles = [legHandles hFlux(1)];
+    legLabels  = [legLabels {'window flux tubes'}];
+end
+
+legHandles = [legHandles hWindow(1) hTarget(1)];
+legLabels  = [legLabels {'window ref', 'target'}];
+
+if gotWallHandle
+    legHandles = [legHandles hWall(1)];
+    legLabels  = [legLabels {'last uninterrupted surface'}];
+end
+
+legend(ax1, legHandles, legLabels, 'Location', 'eastoutside');
 
 %% SECTION 8: Save field data for external tools
 if makeNetCDF
@@ -278,25 +358,23 @@ if makeNetCDF
     nccreate(file, 'br', 'Dimensions', {'r', numel(r), 'z', numel(z)}, 'Datatype', 'single');
     nccreate(file, 'bt', 'Dimensions', {'r', numel(r), 'z', numel(z)}, 'Datatype', 'single');
     nccreate(file, 'bz', 'Dimensions', {'r', numel(r), 'z', numel(z)}, 'Datatype', 'single');
+    nccreate(file, 'psi_wall',   'Dimensions', {'r', numel(r), 'z', numel(z)}, 'Datatype', 'single');
     nccreate(file, 'psi_window', 'Dimensions', {'r', numel(r), 'z', numel(z)}, 'Datatype', 'single');
 
-    if isequal(size(Br), [numel(z) numel(r)])
-        Br = permute(Br, [2 1]);
-    end
-    if isequal(size(Bt), [numel(z) numel(r)])
-        Bt = permute(Bt, [2 1]);
-    end
-    if isequal(size(Bz), [numel(z) numel(r)])
-        Bz = permute(Bz, [2 1]);
-    end
+    if isequal(size(Br), [numel(z) numel(r)]), Br = permute(Br, [2 1]); end
+    if isequal(size(Bt), [numel(z) numel(r)]), Bt = permute(Bt, [2 1]); end
+    if isequal(size(Bz), [numel(z) numel(r)]), Bz = permute(Bz, [2 1]); end
+
+    psiWallOut = xi_wall;
+    if isequal(size(psiWallOut), [numel(z) numel(r)]), psiWallOut = permute(psiWallOut, [2 1]); end
+
     psiWindowOut = xi_window;
-    if isequal(size(psiWindowOut), [numel(z) numel(r)])
-        psiWindowOut = permute(psiWindowOut, [2 1]);
-    end
+    if isequal(size(psiWindowOut), [numel(z) numel(r)]), psiWindowOut = permute(psiWindowOut, [2 1]); end
 
     ncwrite(file, 'br', single(Br));
     ncwrite(file, 'bt', single(Bt));
     ncwrite(file, 'bz', single(Bz));
+    ncwrite(file, 'psi_wall', single(psiWallOut));
     ncwrite(file, 'psi_window', single(psiWindowOut));
 end
 

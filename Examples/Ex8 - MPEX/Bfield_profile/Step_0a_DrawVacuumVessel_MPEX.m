@@ -1,5 +1,5 @@
 function [vessel, window, target, vessel_raw] = Step_0a_DrawVacuumVessel_MPEX(boundaryFile, doPlot)
-% DrawVacuumVessel_MPEX_careful
+% Step_0a_DrawVacuumVessel_MPEX
 % Read MPEX vacuum-vessel coordinates carefully from MPEX_innerbound.xlsx.
 %
 % Outputs
@@ -15,11 +15,9 @@ if nargin < 2
     doPlot = true;
 end
 
-% Read without assuming clean headers.
 A = readcell(boundaryFile, 'Sheet', 1);
 
-% Main boundary lives in columns B:E, starting below the unit rows.
-%   col 2 = Z [in], col 3 = Z [cm], col 4 = r [in], col 5 = r [cm]
+% Main boundary: columns B:E, starting below unit rows
 mainBlock = A(4:end, 2:5);
 
 z_cm = nan(size(mainBlock,1),1);
@@ -30,11 +28,10 @@ for ii = 1:size(mainBlock,1)
 end
 
 mask = isfinite(z_cm) & isfinite(r_cm);
-z_full = z_cm(mask) / 100;  % cm -> m
+z_full = z_cm(mask) / 100;
 r_full = r_cm(mask) / 100;
 
-
-% axisymmetric field calculation.
+% Upper branch = first contiguous nonnegative-r branch
 idxFirstNeg = find(r_full < 0, 1, 'first');
 if isempty(idxFirstNeg)
     iUpperEnd = numel(r_full);
@@ -44,8 +41,6 @@ end
 
 z_upper = z_full(1:iUpperEnd);
 r_upper = r_full(1:iUpperEnd);
-
-
 if numel(z_upper) >= 2
     if abs(z_upper(end) - z_upper(1)) < 1e-10 && abs(r_upper(end) - r_upper(1)) < 1e-10
         z_upper(end) = [];
@@ -53,8 +48,6 @@ if numel(z_upper) >= 2
     end
 end
 
-% Lower branch from the first negative-r point onward, excluding any final
-% repeated closure point if present.
 if isempty(idxFirstNeg)
     z_lower = [];
     r_lower = [];
@@ -77,31 +70,37 @@ vessel_raw.upper_r = r_upper(:)';
 vessel_raw.lower_z = z_lower(:)';
 vessel_raw.lower_r = r_lower(:)';
 
-% Window reference: use the narrow source opening near z ~ 0.02-0.06 m on
-% the upper branch. Fall back to the smallest radius in the near-source zone.
-sourceMask = vessel.z > 0.015 & vessel.z < 0.060;
-if any(sourceMask)
-    z_source = vessel.z(sourceMask);
-    r_source = vessel.r(sourceMask);
-    [window.r, idxMin] = min(r_source);
-    window.z = z_source(idxMin);
+% Window/source reference: force helicon window center at z = 0
+window.z = 0.0;
+
+if window.z < min(vessel.z) || window.z > max(vessel.z)
+    error('window.z = 0 lies outside the vessel z-range.');
+end
+
+% Stepped vessel geometry can contain repeated z values, so avoid interp1.
+tol = 1e-8;
+idxExact = find(abs(vessel.z - window.z) < tol);
+
+if ~isempty(idxExact)
+    % If z=0 exists multiple times, use the smallest positive radius there
+    window.r = min(vessel.r(idxExact));
 else
-    nearSource = vessel.z > -0.10 & vessel.z < 0.30;
-    if any(nearSource)
-        z_source = vessel.z(nearSource);
-        r_source = vessel.r(nearSource);
-        [window.r, idxMin] = min(r_source);
-        window.z = z_source(idxMin);
+    % Find nearest points on each side of z=0
+    idxL = find(vessel.z < window.z, 1, 'last');
+    idxR = find(vessel.z > window.z, 1, 'first');
+
+    if isempty(idxL) || isempty(idxR)
+        [~, idxNear] = min(abs(vessel.z - window.z));
+        window.r = vessel.r(idxNear);
     else
-        window.z = 0.0224;
-        window.r = 0.0622;
+        % Conservative choice for stepped wall: use smaller of the two radii
+        window.r = min(vessel.r([idxL idxR]));
     end
 end
-window.label = 'source / window reference';
 
-% Target plane: use the dedicated target columns if present.
-% In the file, the values appear in cm even though the note says [mm].
-% Example: 782.7 corresponds to the 7.827 m downstream end, so divide by 100.
+window.label = 'helicon window center';
+
+% Target plane from dedicated target columns, if present.
 targetBlock = A(4:end, 7:8);
 targetZ = [];
 targetR = [];
@@ -109,7 +108,7 @@ for ii = 1:size(targetBlock,1)
     zt = localToDouble(targetBlock{ii,1});
     rt = localToDouble(targetBlock{ii,2});
     if isfinite(zt) && isfinite(rt)
-        targetZ(end+1,1) = zt / 100; 
+        targetZ(end+1,1) = zt / 100;
         targetR(end+1,1) = rt / 100;
     end
 end
@@ -125,17 +124,19 @@ target.label = 'downstream target plane';
 
 if doPlot
     figure('Color', 'w'); hold on
-    plot(vessel.z,  vessel.r, 'k-', 'LineWidth', 1.5)
-    plot(vessel.z, -vessel.r, 'k-', 'LineWidth', 1.5)
-    plot(window.z,  window.r, 'bo', 'MarkerFaceColor', 'b')
-    plot(window.z, -window.r, 'bo', 'MarkerFaceColor', 'b')
-    line([target.z target.z], [-target.r target.r], 'Color', 'r', 'LineWidth', 2)
+    plot(vessel_raw.full_z, vessel_raw.full_r, 'r.-', 'DisplayName', 'raw full boundary')
+    plot(vessel.z,  vessel.r, 'k-', 'LineWidth', 1.5, 'DisplayName', 'upper branch used')
+    plot(vessel.z, -vessel.r, 'k-', 'LineWidth', 1.5, 'HandleVisibility', 'off')
+    plot(window.z,  window.r, 'bo', 'MarkerFaceColor', 'b', 'DisplayName', 'window ref')
+    plot(window.z, -window.r, 'bo', 'MarkerFaceColor', 'b', 'HandleVisibility', 'off')
+    plot([target.z target.z], [-target.r target.r], 'm-', 'LineWidth', 2, 'DisplayName', 'target')
     axis equal
     grid on
     box on
     xlabel('z [m]')
     ylabel('r [m]')
     title('MPEX vacuum-vessel inner boundary (careful read)')
+    legend('Location', 'best')
 end
 end
 
