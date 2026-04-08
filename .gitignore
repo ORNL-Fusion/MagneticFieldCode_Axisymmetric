@@ -1,5 +1,6 @@
 # Ignore data and image files
 *.nc
+.DS_Store
 *.txt
 *.csv
 *.tif
