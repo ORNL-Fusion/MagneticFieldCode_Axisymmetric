@@ -10,6 +10,8 @@
 % KEY CHANGE to remove striping:
 %   - Compute grad(psi) analytically from B: dpsi/dr = 2*pi*r*Bz, dpsi/dz = -2*pi*r*Br
 %     instead of using gradient(psi).
+%
+% + Writes psi and psiN to the NetCDF file.
 
 close all; clear; clc;
 
@@ -72,18 +74,11 @@ colorbar;
 % -------------------------------------------------------------------------
 % CONSTRUCT Te AND ne PROFILES FROM psiN
 % -------------------------------------------------------------------------
-% % -------------------------------------------------------------------------
-% CONSTRUCT Te AND ne PROFILES FROM psiN
-% -------------------------------------------------------------------------
 disp('Constructing Te and ne profiles...');
 qe  = 1.602176634e-19;      % [C]
-% te_min = 8;   % eV
-% te_max = 2;   % eV
-% Te = (psiN < 1) .* (te_max - te_min) .* (1 - psiN).^1.75 + te_min;
-% Te(psiN > 1) = te_max;   % flatten beyond LCFS
 
-% --------- Te: max in core, lower at LCFS, then exponential falloff ----------
-Te0       = 2;      % eV at core (psiN=0)  <-- MAX
+% --------- Te: profile definition ----------
+Te0       = 2;      % eV at core (psiN=0)
 Te_edge   = 8;      % eV at LCFS (psiN=1)
 Te_floor  = 0.2;    % eV far outside
 alpha     = 1.75;   % core shaping
@@ -97,14 +92,12 @@ Te(psiN <= 1) = Te_edge + (Te0 - Te_edge) .* (1 - psiN(psiN <= 1)).^alpha;
 % SOL (psiN > 1): exponential starting from Te_edge at psiN=1
 Te(psiN > 1)  = Te_floor + (Te_edge - Te_floor) .* exp(-(psiN(psiN > 1) - 1) ./ lambdaPsi);
 
-
 % Density model (helicon-only): fixed ne_max target + required-power check
-% Set these two knobs per case:
 gasPuff_Gps = 1.0e20;   % gas puff/source rate [particles/s]
-PRF_kW      = 180.0;     % coupled RF power [kW]
+PRF_kW      = 180.0;    % coupled RF power [kW]
 
 Eion_eV     = 1.0e3;    % ionization cost [eV/pair]
-ne_cap      = 1E20;   % target max density [m^-3]
+ne_cap      = 1E20;     % target max density [m^-3]
 
 % RF power required to sustain source rate G at the ionization cost
 Preq_kW = gasPuff_Gps * Eion_eV * qe / 1e3;
@@ -127,7 +120,7 @@ Ne = (psiN < 1) .* (ne_max - ne_min) .* (1 - psiN).^1.75 + ne_min;
 
 % -------------------------------------------------------------------------
 % BUILD PARALLEL VELOCITY PROFILE FROM Te
-% Mach is linear in z: M=-1 at left boundary, +1 at right boundary
+% Mach is piecewise in z
 % -------------------------------------------------------------------------
 disp('Constructing parallel velocity profile from Te...');
 
@@ -135,7 +128,7 @@ mp  = 1.67262192369e-27;    % [kg] proton mass (assume H+)
 
 Cs = sqrt(qe .* Te ./ mp);  % [nR × nZ] ion sound speed
 
-% Piecewise Mach profile in z (to match requested stepped/ramped shape)
+% Piecewise Mach profile in z
 zL = z(1);
 zR = z(end);
 
@@ -186,12 +179,13 @@ Mach = Vpar ./ Cs;   % == M
 % ANALYTICAL PARTICLE AND HEAT FLUXES (PARALLEL)
 % -------------------------------------------------------------------------
 disp('Constructing analytical particle and heat fluxes...');
-GammaPar = Ne .* Vpar;                  
+GammaPar = Ne .* Vpar;
 Qpar     = (5/2) * qe .* Te .* GammaPar;
 
 % Unit vector along magnetic field (for directional flux components)
 Bmag = sqrt(Br.^2 + Bt.^2 + Bz.^2);
-bvec = Bmag(:); bvec = bvec(isfinite(bvec) & bvec>0);
+bvec = Bmag(:); 
+bvec = bvec(isfinite(bvec) & bvec>0);
 if isempty(bvec)
     b_floor = 1e-12;
 else
@@ -224,7 +218,7 @@ dz = z(2) - z(1);
 GammaPerp_r = -Dperp .* dndr;   % [m^-2 s^-1]
 GammaPerp_z = -Dperp .* dndz;   % [m^-2 s^-1]
 
-% === CRITICAL CHANGE: compute grad(psi) from B-field (axisymmetric identity)
+% Compute grad(psi) from B-field (axisymmetric identity)
 rMat = repmat(r(:), 1, nZ);
 
 dpsidr = 2*pi .* rMat .* Bz;      % ∂ψ/∂r
@@ -233,7 +227,8 @@ dpsidz = -2*pi .* rMat .* Br;     % ∂ψ/∂z
 gradPsiMag = sqrt(dpsidr.^2 + dpsidz.^2);
 
 % Prevent blow-up where gradPsi is tiny
-gvec = gradPsiMag(:); gvec = gvec(isfinite(gvec) & gvec>0);
+gvec = gradPsiMag(:); 
+gvec = gvec(isfinite(gvec) & gvec>0);
 if isempty(gvec)
     eps_floor = 1e-12;
 else
@@ -245,9 +240,10 @@ gradPsiMag_safe = max(gradPsiMag, eps_floor);
 nr = dpsidr ./ gradPsiMag_safe;
 nz = dpsidz ./ gradPsiMag_safe;
 
-% Mask truly tiny gradients (optional)
+% Mask truly tiny gradients
 mask_bad = gradPsiMag < eps_floor;
-nr(mask_bad) = 0; nz(mask_bad) = 0;
+nr(mask_bad) = 0; 
+nz(mask_bad) = 0;
 
 % Scalar particle flux across psi surfaces
 GammaPerp = GammaPerp_r .* nr + GammaPerp_z .* nz;
@@ -284,8 +280,10 @@ bDotNpsi = bhat_r .* nr + bhat_z .* nz;
 bDotN_tol = 5e-3;
 bDotNpsi_f = bDotNpsi;
 bDotNpsi_f(abs(bDotNpsi_f) < bDotN_tol) = 0;
+
 GammaPar_psi = GammaPar .* bDotNpsi_f;
 GammaPar_psi(~isfinite(GammaPar_psi)) = 0;
+
 Qpar_psi = Qpar .* bDotNpsi_f;
 Qpar_psi(~isfinite(Qpar_psi)) = 0;
 
@@ -293,6 +291,7 @@ Qpar_psi(~isfinite(Qpar_psi)) = 0;
 GammaTot_r = GammaPar_r + GammaPerp_r;
 GammaTot_t = GammaPar_t;  % perpendicular model has no toroidal component
 GammaTot_z = GammaPar_z + GammaPerp_z;
+
 % Physics-facing across-psi total uses perpendicular contribution.
 % Parallel cross-psi transport is zero in ideal axisymmetry.
 GammaTot_psi = GammaPerp;
@@ -334,7 +333,7 @@ xlabel('$z$ [m]','Interpreter','latex');
 ylabel('$r$ [m]','Interpreter','latex');
 title('$M_\parallel = v_\parallel / c_s$','Interpreter','latex');
 colorbar;
-caxis([-1 1]);   % enforce physical Mach range
+caxis([-1 1]);
 hold on;
 
 % Superpose Mach lineout at r = 0 (nearest grid point)
@@ -473,6 +472,8 @@ ncwrite(outFile,'z',z);
 nccreate(outFile,'br','Dimensions',{'r',nR,'z',nZ},'Datatype','single',cmpr{:});
 nccreate(outFile,'bt','Dimensions',{'r',nR,'z',nZ},'Datatype','single',cmpr{:});
 nccreate(outFile,'bz','Dimensions',{'r',nR,'z',nZ},'Datatype','single',cmpr{:});
+nccreate(outFile,'psi','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
+nccreate(outFile,'psiN','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
 nccreate(outFile,'ne','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
 nccreate(outFile,'te','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
 nccreate(outFile,'vpar','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
@@ -493,7 +494,7 @@ nccreate(outFile,'gamma_perp','Dimensions',{'r',nR,'z',nZ},'Datatype','double',c
 nccreate(outFile,'gamma_perp_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
 nccreate(outFile,'gamma_perp_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
 
-% NEW: Perpendicular heat fluxes
+% Perpendicular heat fluxes
 nccreate(outFile,'qperp','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
 nccreate(outFile,'qperp_r','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
 nccreate(outFile,'qperp_z','Dimensions',{'r',nR,'z',nZ},'Datatype','double',cmpr{:});
@@ -524,6 +525,8 @@ end
 ncwrite(outFile,'br',Br);
 ncwrite(outFile,'bt',Bt);
 ncwrite(outFile,'bz',Bz);
+ncwrite(outFile,'psi',psi);
+ncwrite(outFile,'psiN',psiN);
 ncwrite(outFile,'ne',Ne);
 ncwrite(outFile,'te',Te);
 ncwrite(outFile,'vpar',Vpar);
@@ -543,10 +546,10 @@ ncwrite(outFile,'gamma_perp',GammaPerp);
 ncwrite(outFile,'gamma_perp_r',GammaPerp_r);
 ncwrite(outFile,'gamma_perp_z',GammaPerp_z);
 
-% NEW: Write heat fluxes
 ncwrite(outFile,'qperp',Qperp);
 ncwrite(outFile,'qperp_r',Qperp_r);
 ncwrite(outFile,'qperp_z',Qperp_z);
+
 ncwrite(outFile,'gamma_tot_r',GammaTot_r);
 ncwrite(outFile,'gamma_tot_t',GammaTot_t);
 ncwrite(outFile,'gamma_tot_z',GammaTot_z);
@@ -568,11 +571,14 @@ for iFlux = 1:numel(fluxVarNames)
 end
 
 % Metadata
-ncwriteatt(outFile,'/','title','ProtoMPEX profiles with ne, Te, B-field, v_parallel, analytical fluxes, and perpendicular particle + heat fluxes');
+ncwriteatt(outFile,'/','title','ProtoMPEX profiles with ne, Te, psi, psiN, B-field, v_parallel, analytical fluxes, and perpendicular particle + heat fluxes');
 ncwriteatt(outFile,'/','layout','All 2D variables are [r × z]');
 ncwriteatt(outFile,'/','D_perp_m2_per_s',Dperp);
 ncwriteatt(outFile,'/','chi_perp_m2_per_s',chiPerp);
 ncwriteatt(outFile,'/','psi_normal_method','n_hat from analytic grad(psi): dpsi/dr=2*pi*r*Bz, dpsi/dz=-2*pi*r*Br');
+ncwriteatt(outFile,'/','psi_norm_reference_z_m',z0);
+ncwriteatt(outFile,'/','psi_norm_reference_r_m',r0);
+ncwriteatt(outFile,'/','psi_norm_value_Wb',psi_norm_val);
 ncwriteatt(outFile,'/','bDotNpsi_filter_tol',bDotN_tol);
 ncwriteatt(outFile,'/','flux_convention','Signed flux variables are primary; companion *_abs variables store magnitudes.');
 ncwriteatt(outFile,'/','gasPuff_particles_per_s',gasPuff_Gps);
@@ -591,6 +597,13 @@ ncwriteatt(outFile,'z','units','m');
 ncwriteatt(outFile,'br','units','tesla');
 ncwriteatt(outFile,'bt','units','tesla');
 ncwriteatt(outFile,'bz','units','tesla');
+
+ncwriteatt(outFile,'psi','units','Wb');
+ncwriteatt(outFile,'psi','description','Poloidal flux computed from original summation method: psi(r,z)=2*pi*sum(Bz(1:r,z).*r)*dr');
+
+ncwriteatt(outFile,'psiN','units','1');
+ncwriteatt(outFile,'psiN','description','Normalized poloidal flux psi/psi_ref');
+
 ncwriteatt(outFile,'ne','units','m^-3');
 ncwriteatt(outFile,'te','units','eV');
 ncwriteatt(outFile,'vpar','units','m s^-1');
@@ -601,8 +614,10 @@ ncwriteatt(outFile,'gamma_par_t','units','m^-2 s^-1');
 ncwriteatt(outFile,'gamma_par_z','units','m^-2 s^-1');
 ncwriteatt(outFile,'gamma_par_psi','units','m^-2 s^-1');
 ncwriteatt(outFile,'gamma_par_psi','description','Parallel particle flux projected to psi-normal; non-zero is numerical leakage due to b_hat·n_hat_psi != 0');
+
 ncwriteatt(outFile,'bdotnpsi','units','1');
 ncwriteatt(outFile,'bdotnpsi','description','Dot product b_hat·n_hat_psi; should be approximately zero');
+
 ncwriteatt(outFile,'qpar_r','units','W m^-2');
 ncwriteatt(outFile,'qpar_t','units','W m^-2');
 ncwriteatt(outFile,'qpar_z','units','W m^-2');
@@ -618,11 +633,13 @@ ncwriteatt(outFile,'qperp','units','W m^-2');
 ncwriteatt(outFile,'qperp','description','Scalar cross-field heat flux across psi: (-chi_perp*ne*e*grad Te)·n_hat(psi), with n_hat from B identities');
 ncwriteatt(outFile,'qperp_r','units','W m^-2');
 ncwriteatt(outFile,'qperp_z','units','W m^-2');
+
 ncwriteatt(outFile,'gamma_tot_r','units','m^-2 s^-1');
 ncwriteatt(outFile,'gamma_tot_t','units','m^-2 s^-1');
 ncwriteatt(outFile,'gamma_tot_z','units','m^-2 s^-1');
 ncwriteatt(outFile,'gamma_tot_psi','units','m^-2 s^-1');
 ncwriteatt(outFile,'gamma_tot_psi','description','Across-psi total particle flux; set to gamma_perp (parallel cross-psi is ideally zero in axisymmetry)');
+
 ncwriteatt(outFile,'qtot_r','units','W m^-2');
 ncwriteatt(outFile,'qtot_t','units','W m^-2');
 ncwriteatt(outFile,'qtot_z','units','W m^-2');

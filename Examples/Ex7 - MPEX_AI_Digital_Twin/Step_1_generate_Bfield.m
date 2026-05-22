@@ -112,11 +112,11 @@ coilCurrents{1}.PS2 = 3500;
 coilCurrents{1}.PS3 = 430;
 
 %% MPEX AI Digital Twin Shot Series:5-8 Winodow limited (02/14/2020, Shot #: 29128)
-% coilCurrents{1}.TR1 = 530;
-% coilCurrents{1}.TR2 = 2300;
-% coilCurrents{1}.PS1 = 6800;
-% coilCurrents{1}.PS2 = 4000;
-% coilCurrents{1}.PS3 = 160;
+coilCurrents{1}.TR1 = 530;
+coilCurrents{1}.TR2 = 2300;
+coilCurrents{1}.PS1 = 6800;
+coilCurrents{1}.PS2 = 4000;
+coilCurrents{1}.PS3 = 160;
 
 
 % ii = 1;
