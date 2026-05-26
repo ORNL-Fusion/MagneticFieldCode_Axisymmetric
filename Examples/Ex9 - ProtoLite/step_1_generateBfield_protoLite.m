@@ -1,24 +1,22 @@
-% main_program.m - Main script to compute and plot magnetic flux and axial field
+% main_program.m - Compute magnetic flux, Br, Bz, and write ProtoLite B-field
 
 clc;
 clear all;
+close all;
 
-% ----- Read in coil data and assign coil parameters ----------
+% ----- Read in coil data ----------
 data1 = readtable("Coil_setup_I_locs_8inbackward.xlsx");
 
-% Coil parameters
-nR = data1.layers_r;
-nZ = data1.layers_z;
 R1 = data1.r_inner;
 R2 = data1.r_outer;
 wZ = data1.dz;
 X  = data1.z;
 ps = data1.ps;
 
-z_start = -0.25;   % beginning of dump chamber
-z_end   = 3.5;     % end of device
+z_start = -0.25;
+z_end   = 3.5;
 
-% ----- Map string current names to numeric current values ----------
+% ----- Map current names ----------
 mapping = containers.Map({'PS1', 'TR2', 'TR1'}, [1575, 220, 1575]);
 
 I = zeros(size(ps));
@@ -26,51 +24,80 @@ for idx = 1:length(ps)
     I(idx) = mapping(ps{idx});
 end
 
-% ----- Define grid for flux calculation ----------
-y = linspace(0.001, 0.13, 150);       % radial grid [m]
-Z = linspace(z_start, z_end, 500);    % axial grid [m]
+% ----- Define grid ----------
+r1D = linspace(0.001, 0.13, 150);
+z1D = linspace(z_start, z_end, 500);
 
-[Y, Z_matrix] = meshgrid(y, Z);
-dist = sqrt((Z_matrix).^2 + (Y).^2);
+% meshgrid gives arrays as [nZ x nR]
+[R, Z] = meshgrid(r1D, z1D);
 
-% ----- Compute magnetic flux function ----------
-A_phi_total = computeMagneticFlux(data1, Y, Z_matrix, I);
+% ----- Compute magnetic vector potential A_phi ----------
+A_phi_total = computeMagneticFlux(data1, R, Z, I);   % [nZ x nR]
 
-% ----- Compute axial magnetic field profile ----------
-ZB = linspace(z_start, z_end, 500);
+% =========================================================================
+% Compute psi, Br, and Bz from A_phi
+% =========================================================================
+
+psi_zr = 2*pi .* R .* A_phi_total;   % [nZ x nR]
+
+dr = r1D(2) - r1D(1);
+dz = z1D(2) - z1D(1);
+
+% For matrix [z x r]:
+% first output = derivative along z
+% second output = derivative along r
+[dpsidz, dpsidr] = gradient(psi_zr, dz, dr);
+
+rSafe = R;
+rSafe(rSafe < 1e-8) = 1e-8;
+
+Br_zr = -dpsidz ./ (2*pi .* rSafe);
+Bz_zr =  dpsidr ./ (2*pi .* rSafe);
+Bt_zr = zeros(size(Bz_zr));
+
+% Convert to [r x z] for NetCDF
+Br = Br_zr.';
+Bt = Bt_zr.';
+Bz = Bz_zr.';
+psi = psi_zr.';
+
+r = r1D(:);
+z = z1D(:);
+
+fprintf('max(abs(Br)) before write = %.6e T\n', max(abs(Br(:))));
+fprintf('max(abs(Bz)) before write = %.6e T\n', max(abs(Bz(:))));
+
+% ----- Optional axial field comparison ----------
+ZB = z1D;
 B_total = computeAxialField(data1, ZB, 4*pi*1e-7, I);
 
-b_data = [ZB', B_total'];
-
-% ----- Plot axial field profile ----------
 figure;
 subplot(2,1,1);
-
-plot(ZB, B_total, 'LineWidth', 2.5);
+plot(ZB, B_total, 'k-', 'LineWidth', 2.5);
 hold on;
+plot(z1D, Bz(1,:), 'r--', 'LineWidth', 2.0);
 
 for j = 1:length(X)
-    xline(X(j), 'r--', ['Coil ' num2str(j)]);
+    xline(X(j), 'b--', ['Coil ' num2str(j)]);
 end
 
 grid on;
-hold off;
-
-xlabel('Z (m)');
-ylabel('Axial magnetic field');
-title('Axial Magnetic Field Profile');
+box on;
+xlabel('z [m]');
+ylabel('B_z [T]');
+title('Axial magnetic field comparison');
+legend('computeAxialField', 'B_z from \psi near axis', 'Location', 'best');
 
 % ----- Plot device geometry and flux contours ----------
 subplot(2,1,2);
-
-Find_LCFS(A_phi_total, y, Z, X, data1, z_start);
+Find_LCFS(A_phi_total, r1D, z1D, X, data1, z_start);
 
 hold on;
 
 for j = 1:length(X)
     dR = R2(j) - R1(j);
 
-    rectangle('Position', [(X(j)-wZ(j)/2), R1(j),  wZ(j), dR], ...
+    rectangle('Position', [(X(j)-wZ(j)/2), R1(j), wZ(j), dR], ...
               'FaceColor', [1 0 0], ...
               'EdgeColor', 'r', ...
               'LineWidth', 1);
@@ -84,7 +111,35 @@ end
 hold off;
 
 % =========================================================================
-% Save B-field profile to NetCDF and plot/check output
+% Plot Br, Bz, psi
+% =========================================================================
+
+figure;
+imagesc(z, r, Bz);
+set(gca,'YDir','normal','FontName','Times','FontSize',18);
+colorbar;
+xlabel('z [m]');
+ylabel('r [m]');
+title('ProtoLite B_z [T]');
+
+figure;
+imagesc(z, r, Br);
+set(gca,'YDir','normal','FontName','Times','FontSize',18);
+colorbar;
+xlabel('z [m]');
+ylabel('r [m]');
+title('ProtoLite B_r [T]');
+
+figure;
+imagesc(z, r, psi);
+set(gca,'YDir','normal','FontName','Times','FontSize',18);
+colorbar;
+xlabel('z [m]');
+ylabel('r [m]');
+title('ProtoLite \psi [Wb]');
+
+% =========================================================================
+% Save B-field profile to NetCDF
 % =========================================================================
 
 file = 'bfield_protoLite.nc';
@@ -93,79 +148,78 @@ if exist(file, 'file')
     delete(file);
 end
 
-r  = y(:);       % radial coordinate [nR x 1]
-z1D = Z(:);      % axial coordinate [nZ x 1]
+assert(isequal(size(Br), [numel(r), numel(z)]), 'Br size mismatch');
+assert(isequal(size(Bt), [numel(r), numel(z)]), 'Bt size mismatch');
+assert(isequal(size(Bz), [numel(r), numel(z)]), 'Bz size mismatch');
+assert(isequal(size(psi), [numel(r), numel(z)]), 'psi size mismatch');
 
-% This script computes only axial B-field.
-% Therefore Br and Bt are set to zero unless you compute them elsewhere.
-Br = zeros(numel(r), numel(z1D), 'single');
-Bt = zeros(numel(r), numel(z1D), 'single');
-
-% Interpolate axial B profile onto the Z grid
-Bz_line = interp1(ZB(:), B_total(:), z1D, 'linear', 'extrap');
-
-% Replicate axial B-field across radius
-Bz = repmat(Bz_line(:).', numel(r), 1);   % [nR x nZ]
-
-% --- declare coordinates
 nccreate(file, 'r', ...
     'Dimensions', {'r', numel(r)}, ...
     'Datatype', 'double');
 
 nccreate(file, 'z', ...
-    'Dimensions', {'z', numel(z1D)}, ...
+    'Dimensions', {'z', numel(z)}, ...
     'Datatype', 'double');
 
 ncwrite(file, 'r', r);
-ncwrite(file, 'z', z1D);
+ncwrite(file, 'z', z);
 
-% --- declare fields in [r x z] order
 nccreate(file, 'br', ...
-    'Dimensions', {'r', numel(r), 'z', numel(z1D)}, ...
+    'Dimensions', {'r', numel(r), 'z', numel(z)}, ...
     'Datatype', 'single');
 
 nccreate(file, 'bt', ...
-    'Dimensions', {'r', numel(r), 'z', numel(z1D)}, ...
+    'Dimensions', {'r', numel(r), 'z', numel(z)}, ...
     'Datatype', 'single');
 
 nccreate(file, 'bz', ...
-    'Dimensions', {'r', numel(r), 'z', numel(z1D)}, ...
+    'Dimensions', {'r', numel(r), 'z', numel(z)}, ...
     'Datatype', 'single');
 
-% --- sanity checks
-assert(isequal(size(Br), [numel(r), numel(z1D)]), ...
-    'Br size mismatch');
+nccreate(file, 'psi', ...
+    'Dimensions', {'r', numel(r), 'z', numel(z)}, ...
+    'Datatype', 'double');
 
-assert(isequal(size(Bt), [numel(r), numel(z1D)]), ...
-    'Bt size mismatch');
-
-assert(isequal(size(Bz), [numel(r), numel(z1D)]), ...
-    'Bz size mismatch');
-
-% --- write fields
 ncwrite(file, 'br', single(Br));
 ncwrite(file, 'bt', single(Bt));
 ncwrite(file, 'bz', single(Bz));
+ncwrite(file, 'psi', psi);
 
-% --- read/plot check
-r0  = ncread(file, 'r');
-z0  = ncread(file, 'z');
-bz0 = ncread(file, 'bz');   % [nR x nZ]
+% =========================================================================
+% Read-back check
+% =========================================================================
+
+br0 = ncread(file, 'br');
+bz0 = ncread(file, 'bz');
+
+fprintf('max(abs(Br)) after write = %.6e T\n', max(abs(br0(:))));
+fprintf('max(abs(Bz)) after write = %.6e T\n', max(abs(bz0(:))));
 
 figure;
-imagesc(z0, r0, bz0);
+imagesc(z, r, br0);
 set(gca, 'YDir', 'normal');
 colorbar;
-
 xlabel('z [m]');
 ylabel('r [m]');
-title('B_z from NetCDF');
+title('Read-back B_r from NetCDF');
 
-% --- save CSV files
-writematrix(z1D, 'z1D.csv');
+figure;
+imagesc(z, r, bz0);
+set(gca, 'YDir', 'normal');
+colorbar;
+xlabel('z [m]');
+ylabel('r [m]');
+title('Read-back B_z from NetCDF');
+
+% =========================================================================
+% Save CSV files
+% =========================================================================
+
+writematrix(z,   'z1D.csv');
 writematrix(r,   'r1D.csv');
 writematrix(Br,  'Br2D.csv');
 writematrix(Bz,  'Bz2D.csv');
+writematrix(psi, 'psi2D.csv');
 
-disp('Saved B-field profile to bfield_protoMPEX.nc');
+disp('Saved B-field profile to bfield_protoLite.nc');
 disp('End of script');

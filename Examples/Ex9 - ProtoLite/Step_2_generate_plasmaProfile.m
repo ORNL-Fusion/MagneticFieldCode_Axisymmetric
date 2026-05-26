@@ -7,11 +7,14 @@ close all; clear; clc;
 % -------------------------------------------------------------------------
 fileB = 'bfield_protoLite.nc';
 
-r  = ncread(fileB,'r');      % [m]
-z  = ncread(fileB,'z');      % [m]
-Br = ncread(fileB,'br');     % [r x z]
-Bt = ncread(fileB,'bt');     % [r x z]
-Bz = ncread(fileB,'bz');     % [r x z]
+r  = ncread(fileB,'r');
+z  = ncread(fileB,'z');
+Br = ncread(fileB,'br');
+Bt = ncread(fileB,'bt');
+Bz = ncread(fileB,'bz');
+
+r = r(:);
+z = z(:);
 
 if ~isequal(size(Bz), [numel(r) numel(z)])
     Br = permute(Br,[2 1]);
@@ -19,55 +22,86 @@ if ~isequal(size(Bz), [numel(r) numel(z)])
     Bz = permute(Bz,[2 1]);
 end
 
+Br = real(Br);
+Bt = real(Bt);
+Bz = real(Bz);
+
 nR = numel(r);
 nZ = numel(z);
 
 zL = z(1);
 zR = z(end);
 
+dr = r(2) - r(1);
+dz = z(2) - z(1);
+
 % -------------------------------------------------------------------------
-% PLOT INPUT Bz FIELD
+% PLOT INPUT FIELD
 % -------------------------------------------------------------------------
 figure;
-imagesc(z, r, Bz);
+imagesc(z,r,Bz);
 set(gca,'YDir','normal','FontName','Times','FontSize',18);
 xlabel('$z$ [m]','Interpreter','latex');
 ylabel('$r$ [m]','Interpreter','latex');
 title('ProtoLite input $B_z$ [T]','Interpreter','latex');
 colorbar;
-axis image tight;
+xlim([zL zR]);
+
+figure;
+imagesc(z,r,Br);
+set(gca,'YDir','normal','FontName','Times','FontSize',18);
+xlabel('$z$ [m]','Interpreter','latex');
+ylabel('$r$ [m]','Interpreter','latex');
+title('ProtoLite input $B_r$ [T]','Interpreter','latex');
+colorbar;
 xlim([zL zR]);
 
 % -------------------------------------------------------------------------
-% CALCULATE PSI
+% READ PSI IF AVAILABLE, OTHERWISE COMPUTE FROM Bz
 % -------------------------------------------------------------------------
-disp('Calculating ProtoLite psi...');
+disp('Loading/calculating ProtoLite psi...');
 
-dr = r(2) - r(1);
-dz = z(2) - z(1);
+infoB = ncinfo(fileB);
+varNames = {infoB.Variables.Name};
 
-psi = zeros(nR, nZ);
+if any(strcmp(varNames,'psi'))
+    psi = ncread(fileB,'psi');
 
-for ii = 1:nR
-    for jj = 1:nZ
-        psi(ii,jj) = 2*pi * sum(Bz(1:ii,jj) .* r(1:ii)) * dr;
+    if ~isequal(size(psi), [nR nZ])
+        psi = permute(psi,[2 1]);
+    end
+
+    psi = real(psi);
+else
+    psi = zeros(nR,nZ);
+
+    for ii = 1:nR
+        for jj = 1:nZ
+            psi(ii,jj) = 2*pi * sum(Bz(1:ii,jj) .* r(1:ii)) * dr;
+        end
     end
 end
 
-% Reference location for psi normalization
-z0 = min(max(1.0, zL), zR);
-r0 = min(max(0.06, r(1)), r(end));
+% -------------------------------------------------------------------------
+% NORMALIZE PSI
+% -------------------------------------------------------------------------
+z0 = min(max(1.0,zL),zR);
+r0 = min(max(0.06,r(1)),r(end));
 
-psi_norm_val = interp2(z, r, psi, z0, r0, 'linear');
+psi_norm_val = interp2(z,r,psi,z0,r0,'linear');
 
 if ~isfinite(psi_norm_val) || abs(psi_norm_val) < 1e-30
     error('Bad psi normalization value. Check z0/r0 and B-field file.');
 end
 
-psiN = psi ./ psi_norm_val;
+psiN = real(psi ./ psi_norm_val);
+psiN(~isfinite(psiN)) = 1;
+
+% Clamped psiN for fractional-power core formulas
+psiN_core = min(max(psiN,0),1);
 
 figure;
-imagesc(z, r, psiN);
+imagesc(z,r,psiN);
 set(gca,'YDir','normal','FontName','Times','FontSize',18);
 xlabel('$z$ [m]','Interpreter','latex');
 ylabel('$r$ [m]','Interpreter','latex');
@@ -76,26 +110,32 @@ colorbar;
 xlim([zL zR]);
 
 % -------------------------------------------------------------------------
-% CONSTRUCT Te AND ne PROFILES
+% CONSTRUCT Te AND ne
 % -------------------------------------------------------------------------
 disp('Constructing ProtoLite Te and ne profiles...');
 
 qe = 1.602176634e-19;
 
-Te0       = 2.0;     % eV
-Te_edge   = 6.0;     % eV
-Te_floor  = 0.2;     % eV
+Te0       = 2.0;
+Te_edge   = 6.0;
+Te_floor  = 0.2;
 alpha     = 1.75;
 lambdaPsi = 0.15;
 
-Te = zeros(size(psiN));
-
-inside = psiN <= 1;
+inside  = psiN <= 1;
 outside = psiN > 1;
 
-Te(inside) = Te_edge + (Te0 - Te_edge) .* (1 - psiN(inside)).^alpha;
-Te(outside) = Te_floor + (Te_edge - Te_floor) .* ...
-    exp(-(psiN(outside) - 1) ./ lambdaPsi);
+Te = zeros(size(psiN));
+
+Te(inside) = Te_edge + ...
+    (Te0 - Te_edge) .* (1 - psiN_core(inside)).^alpha;
+
+Te(outside) = Te_floor + ...
+    (Te_edge - Te_floor) .* exp(-(psiN(outside) - 1) ./ lambdaPsi);
+
+Te = real(Te);
+Te(~isfinite(Te)) = Te_floor;
+Te = max(Te,Te_floor);
 
 % Density model
 gasPuff_Gps = 1.0e20;
@@ -104,74 +144,70 @@ Eion_eV     = 1.0e3;
 
 ne_min = 1.0e16;
 ne_cap = 1.0e20;
-ne_max = min(max(ne_cap, 5.0e18), 5.0e20);
+ne_max = min(max(ne_cap,5.0e18),5.0e20);
 
 Preq_kW = gasPuff_Gps * Eion_eV * qe / 1e3;
-powerFactor = min(PRF_kW / max(Preq_kW,1e-12), 1.0);
+powerFactor = min(PRF_kW / max(Preq_kW,1e-12),1.0);
 
 ne_ref_for_power = 1.0e20;
 Preq_ne_kW = Preq_kW * (ne_max / ne_ref_for_power);
 powerMargin = PRF_kW / max(Preq_ne_kW,1e-12);
 
 Ne = ne_min .* ones(size(psiN));
-Ne(inside) = (ne_max - ne_min) .* (1 - psiN(inside)).^1.75 + ne_min;
+
+Ne(inside) = (ne_max - ne_min) .* ...
+    (1 - psiN_core(inside)).^1.75 + ne_min;
+
+Ne = real(Ne);
+Ne(~isfinite(Ne)) = ne_min;
+Ne = max(Ne,ne_min);
 
 disp(sprintf(['ProtoLite ne_max = %.3e m^-3\n', ...
     'Required power for ne_max: %.2f kW, available PRF = %.1f kW'], ...
-    ne_max, Preq_ne_kW, PRF_kW));
+    ne_max,Preq_ne_kW,PRF_kW));
 
 % -------------------------------------------------------------------------
-% PARALLEL VELOCITY PROFILE
-% ProtoLite: helicon window centered at z = 1.0 m
-% Stagnation point is imposed at z = 1.0 m
+% PARALLEL VELOCITY PROFILE WITH STAGNATION AT z = 1.0 m
 % -------------------------------------------------------------------------
-disp('Constructing ProtoLite parallel velocity profile with stagnation at z = 1.0 m...');
+disp('Constructing ProtoLite parallel velocity profile...');
 
 mp = 1.67262192369e-27;
-Cs = sqrt(qe .* Te ./ mp);
 
-zStag = 1.0;       % helicon-window center / stagnation point [m]
+Cs = sqrt(qe .* max(real(Te),Te_floor) ./ mp);
+Cs(~isfinite(Cs)) = 0;
 
-% Clamp to simulation domain
-zStag = min(max(zStag, zL), zR);
-
-% Endpoints for Mach profile
-zLeft  = zL;
-zRight = zR;
+zStag = min(max(1.0,zL),zR);
 
 Mz = zeros(1,nZ);
 
-% Left side: M = -1 at left boundary, rising to 0 at zStag
 idxL = z < zStag;
-if zStag > zLeft
-    Mz(idxL) = -1 .* (zStag - z(idxL)) ./ (zStag - zLeft);
-else
-    Mz(idxL) = 0;
+if zStag > zL
+    Mz(idxL) = -1 .* (zStag - z(idxL)) ./ (zStag - zL);
 end
 
-% Right side: M = 0 at zStag, rising to +1 at right boundary
 idxR = z > zStag;
-if zRight > zStag
-    Mz(idxR) = +1 .* (z(idxR) - zStag) ./ (zRight - zStag);
-else
-    Mz(idxR) = 0;
+if zR > zStag
+    Mz(idxR) = +1 .* (z(idxR) - zStag) ./ (zR - zStag);
 end
 
-% Exactly at/nearest stagnation point: M = 0
-[~, iStag] = min(abs(z - zStag));
+[~,iStag] = min(abs(z - zStag));
 Mz(iStag) = 0;
 
-% Clip for numerical safety
 Mz = max(min(Mz,1),-1);
 
 M = repmat(Mz,nR,1);
-Vpar = M .* Cs;
-Mach = Vpar ./ Cs;
+
+Vpar = real(M .* Cs);
+Vpar(~isfinite(Vpar)) = 0;
+
+Mach = zeros(size(Vpar));
+validCs = Cs > 0;
+Mach(validCs) = Vpar(validCs) ./ Cs(validCs);
+Mach(~isfinite(Mach)) = 0;
+
 % -------------------------------------------------------------------------
 % PARALLEL FLUXES
 % -------------------------------------------------------------------------
-disp('Constructing ProtoLite parallel particle and heat fluxes...');
-
 GammaPar = Ne .* Vpar;
 Qpar = (5/2) * qe .* Te .* GammaPar;
 
@@ -202,11 +238,9 @@ Qpar_z = Qpar .* bhat_z;
 % -------------------------------------------------------------------------
 % PERPENDICULAR PARTICLE FLUX
 % -------------------------------------------------------------------------
-disp('Computing ProtoLite perpendicular particle flux...');
-
 Dperp = 0.45;
 
-[dndr, dndz] = gradient(Ne, dr, dz);
+[dndr,dndz] = gradient(Ne,dr,dz);
 
 GammaPerp_r = -Dperp .* dndr;
 GammaPerp_z = -Dperp .* dndz;
@@ -242,11 +276,9 @@ GammaPerp(~isfinite(GammaPerp)) = 0;
 % -------------------------------------------------------------------------
 % PERPENDICULAR HEAT FLUX
 % -------------------------------------------------------------------------
-disp('Computing ProtoLite perpendicular heat flux...');
-
 chiPerp = 1.0;
 
-[dTdr, dTdz] = gradient(Te, dr, dz);
+[dTdr,dTdz] = gradient(Te,dr,dz);
 
 Qperp_r = -chiPerp .* Ne .* qe .* dTdr;
 Qperp_z = -chiPerp .* Ne .* qe .* dTdz;
@@ -307,47 +339,26 @@ title('ProtoLite $v_\parallel$ [m/s]','Interpreter','latex');
 colorbar; xlim([zL zR]);
 
 figure;
-
-imagesc(z, r, Mach);
-
+imagesc(z,r,Mach);
 set(gca,'YDir','normal','FontName','Times','FontSize',18);
-
 xlabel('$z$ [m]','Interpreter','latex');
 ylabel('$r$ [m]','Interpreter','latex');
-
 title('ProtoLite $M_\parallel = v_\parallel/c_s$','Interpreter','latex');
-
-colorbar;
-caxis([-1 1]);
-xlim([zL zR]);
-
+colorbar; caxis([-1 1]); xlim([zL zR]);
 hold on;
 
-% -------------------------------------------------------------------------
-% 1D lineout at r = 0.06 m
-% -------------------------------------------------------------------------
-rLine = 0.0;
+rLine = 0.06;
+[~,iRline] = min(abs(r - rLine));
 
-[~, iRline] = min(abs(r - rLine));
+plot([z(1) z(end)],[r(iRline) r(iRline)],'w--','LineWidth',2);
 
-% Show lineout location on 2D map
-plot([z(1) z(end)], ...
-     [r(iRline) r(iRline)], ...
-     'w--', 'LineWidth', 2);
-
-% Secondary axis for 1D lineout
-yyaxis right
-
-plot(z, Mach(iRline,:), ...
-     'k-', 'LineWidth', 3);
-
-ylabel(sprintf('$M_{\\parallel}(z)$ at $r=%.3f$ m', r(iRline)), ...
-       'Interpreter','latex');
-
+yyaxis right;
+plot(z,Mach(iRline,:),'k-','LineWidth',3);
+ylabel(sprintf('$M_{\\parallel}(z)$ at $r=%.3f$ m',r(iRline)), ...
+    'Interpreter','latex');
 ylim([-1.05 1.05]);
 
-yyaxis left
-
+yyaxis left;
 hold off;
 
 figure; imagesc(z,r,GammaPar);
@@ -445,76 +456,19 @@ for ii = 1:size(vars,1)
     data = vars{ii,2};
     dtype = vars{ii,3};
 
+    data = real(data);
+    data(~isfinite(data)) = 0;
+
     nccreate(outFile,name, ...
         'Dimensions',{'r',nR,'z',nZ}, ...
         'Datatype',dtype,cmpr{:});
 
-    ncwrite(outFile,name,data);
+    if strcmp(dtype,'single')
+        ncwrite(outFile,name,single(data));
+    else
+        ncwrite(outFile,name,data);
+    end
 end
 
-% Absolute-value companions
-fluxVarNames = {
-    'gamma_par','qpar','gamma_par_r','gamma_par_t','gamma_par_z','gamma_par_psi', ...
-    'qpar_r','qpar_t','qpar_z','qpar_psi', ...
-    'gamma_perp','gamma_perp_r','gamma_perp_z', ...
-    'qperp','qperp_r','qperp_z', ...
-    'gamma_tot_r','gamma_tot_t','gamma_tot_z','gamma_tot_psi', ...
-    'qtot_r','qtot_t','qtot_z','qtot_psi'
-};
-
-fluxData = {
-    GammaPar,Qpar,GammaPar_r,GammaPar_t,GammaPar_z,GammaPar_psi, ...
-    Qpar_r,Qpar_t,Qpar_z,Qpar_psi, ...
-    GammaPerp,GammaPerp_r,GammaPerp_z, ...
-    Qperp,Qperp_r,Qperp_z, ...
-    GammaTot_r,GammaTot_t,GammaTot_z,GammaTot_psi, ...
-    Qtot_r,Qtot_t,Qtot_z,Qtot_psi
-};
-
-for ii = 1:numel(fluxVarNames)
-    absName = [fluxVarNames{ii}, '_abs'];
-
-    nccreate(outFile,absName, ...
-        'Dimensions',{'r',nR,'z',nZ}, ...
-        'Datatype','double',cmpr{:});
-
-    ncwrite(outFile,absName,abs(fluxData{ii}));
-end
-
-% -------------------------------------------------------------------------
-% METADATA
-% -------------------------------------------------------------------------
-ncwriteatt(outFile,'/','title','ProtoLite plasma profiles with B-field, psi, psiN, ne, Te, velocity, particle fluxes, and heat fluxes');
-ncwriteatt(outFile,'/','layout','All 2D variables are [r x z]');
-ncwriteatt(outFile,'/','source_bfield_file',fileB);
-ncwriteatt(outFile,'/','D_perp_m2_per_s',Dperp);
-ncwriteatt(outFile,'/','chi_perp_m2_per_s',chiPerp);
-ncwriteatt(outFile,'/','psi_normal_method','n_hat from analytic grad(psi): dpsi/dr=2*pi*r*Bz, dpsi/dz=-2*pi*r*Br');
-ncwriteatt(outFile,'/','psi_norm_reference_z_m',z0);
-ncwriteatt(outFile,'/','psi_norm_reference_r_m',r0);
-ncwriteatt(outFile,'/','psi_norm_value_Wb',psi_norm_val);
-ncwriteatt(outFile,'/','bDotNpsi_filter_tol',bDotN_tol);
-ncwriteatt(outFile,'/','gasPuff_particles_per_s',gasPuff_Gps);
-ncwriteatt(outFile,'/','PRF_kW',PRF_kW);
-ncwriteatt(outFile,'/','Preq_kW_from_ionization_cost',Preq_kW);
-ncwriteatt(outFile,'/','powerFactor_PRF_over_Preq_capped',powerFactor);
-ncwriteatt(outFile,'/','Eion_eV_per_pair',Eion_eV);
-ncwriteatt(outFile,'/','ne_ref_for_power_scaling_m3',ne_ref_for_power);
-ncwriteatt(outFile,'/','Preq_kW_for_target_ne_max',Preq_ne_kW);
-ncwriteatt(outFile,'/','power_margin_PRF_over_Preq_ne',powerMargin);
-ncwriteatt(outFile,'/','ne_model_ne_cap_m3',ne_cap);
-ncwriteatt(outFile,'/','ne_model_type','ProtoLite helicon fixed ne target with power check');
-
-ncwriteatt(outFile,'r','units','m');
-ncwriteatt(outFile,'z','units','m');
-ncwriteatt(outFile,'br','units','T');
-ncwriteatt(outFile,'bt','units','T');
-ncwriteatt(outFile,'bz','units','T');
-ncwriteatt(outFile,'psi','units','Wb');
-ncwriteatt(outFile,'psiN','units','1');
-ncwriteatt(outFile,'ne','units','m^-3');
-ncwriteatt(outFile,'te','units','eV');
-ncwriteatt(outFile,'vpar','units','m s^-1');
-
-disp(['Wrote ', outFile, ' successfully.']);
+disp(['Wrote ',outFile,' successfully.']);
 disp('End of ProtoLite profile generation script.');
