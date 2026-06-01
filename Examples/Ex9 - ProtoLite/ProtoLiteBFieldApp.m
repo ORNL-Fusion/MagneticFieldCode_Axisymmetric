@@ -1,0 +1,529 @@
+classdef ProtoLiteBFieldApp < matlab.apps.AppBase
+
+    properties (Access = public)
+        UIFigure matlab.ui.Figure
+        MainGrid matlab.ui.container.GridLayout
+        ControlPanel matlab.ui.container.Panel
+        PlotPanel matlab.ui.container.Panel
+
+        LoadButton matlab.ui.control.Button
+        ComputeButton matlab.ui.control.Button
+        ExportButton matlab.ui.control.Button
+
+        PS1Field matlab.ui.control.NumericEditField
+        TR1Field matlab.ui.control.NumericEditField
+        TR2Field matlab.ui.control.NumericEditField
+
+        ZStartField matlab.ui.control.NumericEditField
+        ZEndField matlab.ui.control.NumericEditField
+        RMinField matlab.ui.control.NumericEditField
+        RMaxField matlab.ui.control.NumericEditField
+        NRField matlab.ui.control.NumericEditField
+        NZField matlab.ui.control.NumericEditField
+
+        StatusText matlab.ui.control.TextArea
+
+        TabGroup matlab.ui.container.TabGroup
+        CombinedTab matlab.ui.container.Tab
+        BzTab matlab.ui.container.Tab
+        BrTab matlab.ui.container.Tab
+        PsiTab matlab.ui.container.Tab
+        AxisTab matlab.ui.container.Tab
+        GeometryTab matlab.ui.container.Tab
+
+        CombinedGrid matlab.ui.container.GridLayout
+        CombinedAxisAxes matlab.ui.control.UIAxes
+        CombinedGeometryAxes matlab.ui.control.UIAxes
+
+        BzAxes matlab.ui.control.UIAxes
+        BrAxes matlab.ui.control.UIAxes
+        PsiAxes matlab.ui.control.UIAxes
+        AxisAxes matlab.ui.control.UIAxes
+        GeometryAxes matlab.ui.control.UIAxes
+    end
+
+    properties (Access = private)
+        data1 table
+        coilFile char
+
+        r double
+        z double
+        r1D double
+        z1D double
+
+        Br double
+        Bt double
+        Bz double
+        psi double
+        A_phi_total double
+        I double
+        B_total double
+    end
+
+    methods (Access = private)
+
+        function createComponents(app)
+
+            app.UIFigure = uifigure('Name','Proto-Lite Magnetic Field App');
+            app.UIFigure.Position = [100 100 1500 850];
+
+            app.MainGrid = uigridlayout(app.UIFigure,[1 2]);
+            app.MainGrid.ColumnWidth = {310,'1x'};
+
+            app.ControlPanel = uipanel(app.MainGrid,'Title','Controls');
+            app.ControlPanel.Layout.Column = 1;
+
+            cg = uigridlayout(app.ControlPanel,[22 2]);
+            cg.RowHeight = repmat({30},1,22);
+            cg.ColumnWidth = {135,'1x'};
+            cg.Padding = [10 10 10 10];
+
+            app.LoadButton = uibutton(cg,'push','Text','Load Coil Excel File');
+            app.LoadButton.Layout.Row = 1;
+            app.LoadButton.Layout.Column = [1 2];
+            app.LoadButton.ButtonPushedFcn = @(~,~) app.loadCoilFile();
+
+            uilabel(cg,'Text','PS1 Current [A]');
+            app.PS1Field = uieditfield(cg,'numeric','Value',1575);
+
+            uilabel(cg,'Text','TR1 Current [A]');
+            app.TR1Field = uieditfield(cg,'numeric','Value',1575);
+
+            uilabel(cg,'Text','TR2 Current [A]');
+            app.TR2Field = uieditfield(cg,'numeric','Value',220);
+
+            uilabel(cg,'Text','z start [m]');
+            app.ZStartField = uieditfield(cg,'numeric','Value',-0.25);
+
+            uilabel(cg,'Text','z end [m]');
+            app.ZEndField = uieditfield(cg,'numeric','Value',3.5);
+
+            uilabel(cg,'Text','r min [m]');
+            app.RMinField = uieditfield(cg,'numeric','Value',0.001);
+
+            uilabel(cg,'Text','r max [m]');
+            app.RMaxField = uieditfield(cg,'numeric','Value',0.13);
+
+            uilabel(cg,'Text','N_r');
+            app.NRField = uieditfield(cg,'numeric','Value',150);
+
+            uilabel(cg,'Text','N_z');
+            app.NZField = uieditfield(cg,'numeric','Value',500);
+
+            app.ComputeButton = uibutton(cg,'push','Text','Compute B Field');
+            app.ComputeButton.Layout.Row = 12;
+            app.ComputeButton.Layout.Column = [1 2];
+            app.ComputeButton.ButtonPushedFcn = @(~,~) app.computeBField();
+
+            app.ExportButton = uibutton(cg,'push','Text','Export NetCDF and CSV');
+            app.ExportButton.Layout.Row = 13;
+            app.ExportButton.Layout.Column = [1 2];
+            app.ExportButton.ButtonPushedFcn = @(~,~) app.exportData();
+
+            uilabel(cg,'Text','Status');
+            app.StatusText = uitextarea(cg,'Value',{'Load coil setup file to begin.'});
+            app.StatusText.Layout.Row = [15 22];
+            app.StatusText.Layout.Column = [1 2];
+
+            app.PlotPanel = uipanel(app.MainGrid,'Title','Plots');
+            app.PlotPanel.Layout.Column = 2;
+
+            pg = uigridlayout(app.PlotPanel,[1 1]);
+            app.TabGroup = uitabgroup(pg);
+
+            app.CombinedTab = uitab(app.TabGroup,'Title','Combined Layout');
+            app.BzTab = uitab(app.TabGroup,'Title','Bz');
+            app.BrTab = uitab(app.TabGroup,'Title','Br');
+            app.PsiTab = uitab(app.TabGroup,'Title','Psi');
+            app.AxisTab = uitab(app.TabGroup,'Title','Axis Bz');
+            app.GeometryTab = uitab(app.TabGroup,'Title','Geometry');
+
+            app.CombinedGrid = uigridlayout(app.CombinedTab,[2 1]);
+            app.CombinedGrid.RowHeight = {'1x','1.15x'};
+            app.CombinedGrid.Padding = [10 10 10 10];
+
+            app.CombinedAxisAxes = uiaxes(app.CombinedGrid);
+            app.CombinedAxisAxes.Layout.Row = 1;
+
+            app.CombinedGeometryAxes = uiaxes(app.CombinedGrid);
+            app.CombinedGeometryAxes.Layout.Row = 2;
+
+            app.BzAxes = uiaxes(app.BzTab,'Position',[40 45 1020 650]);
+            app.BrAxes = uiaxes(app.BrTab,'Position',[40 45 1020 650]);
+            app.PsiAxes = uiaxes(app.PsiTab,'Position',[40 45 1020 650]);
+            app.AxisAxes = uiaxes(app.AxisTab,'Position',[40 45 1020 650]);
+            app.GeometryAxes = uiaxes(app.GeometryTab,'Position',[40 45 1020 650]);
+        end
+
+        function setStatus(app,msg)
+            app.StatusText.Value = cellstr(msg);
+            drawnow;
+        end
+
+        function loadCoilFile(app)
+            [file,path] = uigetfile('*.xlsx','Select Coil_setup Excel File');
+
+            if isequal(file,0)
+                app.setStatus('File loading cancelled.');
+                return
+            end
+
+            app.coilFile = fullfile(path,file);
+            app.data1 = readtable(app.coilFile);
+            app.setStatus(sprintf('Loaded:\n%s',app.coilFile));
+        end
+
+        function computeBField(app)
+
+            if isempty(app.data1)
+                app.setStatus('Please load Coil_setup Excel file first.');
+                return
+            end
+
+            data1 = app.data1;
+
+            R1 = data1.r_inner;
+            R2 = data1.r_outer;
+            wZ = data1.dz;
+            X  = data1.z;
+            ps = data1.ps;
+
+            z_start = app.ZStartField.Value;
+            z_end   = app.ZEndField.Value;
+
+            mapping = containers.Map({'PS1','TR2','TR1'}, ...
+                [app.PS1Field.Value,app.TR2Field.Value,app.TR1Field.Value]);
+
+            I = zeros(size(ps));
+            for idx = 1:length(ps)
+                I(idx) = mapping(ps{idx});
+            end
+
+            app.I = I;
+
+            r1D = linspace(app.RMinField.Value,app.RMaxField.Value,round(app.NRField.Value));
+            z1D = linspace(z_start,z_end,round(app.NZField.Value));
+
+            app.r1D = r1D;
+            app.z1D = z1D;
+
+            [R,Z] = meshgrid(r1D,z1D);
+
+            app.setStatus('Computing magnetic vector potential...');
+            A_phi_total = computeMagneticFlux(data1,R,Z,I);
+
+            psi_zr = 2*pi .* R .* A_phi_total;
+
+            dr = r1D(2) - r1D(1);
+            dz = z1D(2) - z1D(1);
+
+            [dpsidz,dpsidr] = gradient(psi_zr,dz,dr);
+
+            rSafe = R;
+            rSafe(rSafe < 1e-8) = 1e-8;
+
+            Br_zr = -dpsidz ./ (2*pi .* rSafe);
+            Bz_zr =  dpsidr ./ (2*pi .* rSafe);
+            Bt_zr = zeros(size(Bz_zr));
+
+            app.Br = Br_zr.';
+            app.Bt = Bt_zr.';
+            app.Bz = Bz_zr.';
+            app.psi = psi_zr.';
+            app.A_phi_total = A_phi_total;
+
+            app.r = r1D(:);
+            app.z = z1D(:);
+
+            app.B_total = computeAxialField(data1,z1D,4*pi*1e-7,I);
+
+            app.updatePlots();
+
+            app.setStatus(sprintf(['Computation complete.\n', ...
+                'max |Br| = %.6e T\nmax |Bz| = %.6e T'], ...
+                max(abs(app.Br(:))),max(abs(app.Bz(:)))));
+        end
+
+        function updatePlots(app)
+
+            imagesc(app.BzAxes,app.z,app.r,app.Bz);
+            set(app.BzAxes,'YDir','normal');
+            colorbar(app.BzAxes);
+            colormap(app.BzAxes,'turbo');
+            xlabel(app.BzAxes,'z [m]');
+            ylabel(app.BzAxes,'r [m]');
+            title(app.BzAxes,'Proto-Lite B_z [T]');
+
+            imagesc(app.BrAxes,app.z,app.r,app.Br);
+            set(app.BrAxes,'YDir','normal');
+            colorbar(app.BrAxes);
+            colormap(app.BrAxes,'turbo');
+            xlabel(app.BrAxes,'z [m]');
+            ylabel(app.BrAxes,'r [m]');
+            title(app.BrAxes,'Proto-Lite B_r [T]');
+
+            imagesc(app.PsiAxes,app.z,app.r,app.psi);
+            set(app.PsiAxes,'YDir','normal');
+            colorbar(app.PsiAxes);
+            colormap(app.PsiAxes,'turbo');
+            xlabel(app.PsiAxes,'z [m]');
+            ylabel(app.PsiAxes,'r [m]');
+            title(app.PsiAxes,'Proto-Lite \psi [Wb]');
+
+            app.plotAxisField(app.AxisAxes);
+            app.plotGeometryUsingFindLCFS(app.GeometryAxes);
+            app.plotAxisField(app.CombinedAxisAxes);
+            app.plotGeometryUsingFindLCFS(app.CombinedGeometryAxes);
+
+            outdir = 'ProtoLite_Plots';
+
+            if ~exist(outdir,'dir')
+                mkdir(outdir);
+            end
+
+            exportgraphics(app.BzAxes,...
+                fullfile(outdir,'ProtoLite_Bz.png'),...
+                'Resolution',300);
+
+            exportgraphics(app.BrAxes,...
+                fullfile(outdir,'ProtoLite_Br.png'),...
+                'Resolution',300);
+
+            exportgraphics(app.PsiAxes,...
+                fullfile(outdir,'ProtoLite_Psi.png'),...
+                'Resolution',300);
+
+            exportgraphics(app.AxisAxes,...
+                fullfile(outdir,'ProtoLite_AxialField.png'),...
+                'Resolution',300);
+
+            exportgraphics(app.GeometryAxes,...
+                fullfile(outdir,'ProtoLite_Geometry.png'),...
+                'Resolution',300);
+
+            exportgraphics(app.CombinedAxisAxes,...
+                fullfile(outdir,'ProtoLite_Combined_AxialField.png'),...
+                'Resolution',300);
+
+            exportgraphics(app.CombinedGeometryAxes,...
+                fullfile(outdir,'ProtoLite_Combined_Geometry.png'),...
+                'Resolution',300);
+
+            % Save full combined layout panel as one PNG
+            outdir = 'ProtoLite_Plots';
+            if ~exist(outdir,'dir')
+                mkdir(outdir);
+            end
+
+            drawnow;
+
+            exportgraphics(app.CombinedTab, ...
+                fullfile(outdir,'ProtoLite_CombinedLayout.png'), ...
+                'Resolution',300);
+        end
+
+        function plotAxisField(app,ax)
+
+            data1 = app.data1;
+            X = data1.z;
+
+            cla(ax);
+            hold(ax,'on');
+
+            plot(ax,app.z1D,app.B_total,'k-','LineWidth',2.5);
+            plot(ax,app.z1D,app.Bz(1,:),'r--','LineWidth',2.0);
+
+            for j = 1:length(X)
+                xline(ax,X(j),'b--',sprintf('Coil %d',j), ...
+                    'LabelOrientation','aligned', ...
+                    'LabelVerticalAlignment','top');
+            end
+
+            grid(ax,'on');
+            box(ax,'on');
+            xlabel(ax,'z [m]');
+            ylabel(ax,'B_z [T]');
+            title(ax,'Axial magnetic field comparison');
+            legend(ax,'computeAxialField','B_z from \psi near axis','Location','northeast');
+            xlim(ax,[app.ZStartField.Value app.ZEndField.Value]);
+
+            hold(ax,'off');
+        end
+
+  function plotGeometryUsingFindLCFS(app,ax)
+
+    data1 = app.data1;
+
+    R1 = data1.r_inner;
+    R2 = data1.r_outer;
+    wZ = data1.dz;
+    X  = data1.z;
+    ps = data1.ps;
+
+    cla(ax);
+    hold(ax,'on');
+
+    % -------------------------------------------------------------
+    % Run original Find_LCFS in a hidden figure, then copy contents
+    % into the app axes. This preserves the real LCFS/vessel layout.
+    % -------------------------------------------------------------
+    tmpFig = figure('Visible','off');
+    tmpAx = axes(tmpFig);
+
+    try
+        axes(tmpAx);
+        Find_LCFS(app.A_phi_total, app.r1D, app.z1D, X, data1, app.ZStartField.Value);
+
+        srcAx = gca;
+        copiedObjects = copyobj(allchild(srcAx), ax);
+
+        % Copy axis limits and colormap from Find_LCFS output
+        ax.XLim = srcAx.XLim;
+        ax.YLim = srcAx.YLim;
+        colormap(ax, colormap(srcAx));
+
+        % Copy colorbar if Find_LCFS created one
+        cbOld = findall(tmpFig,'Type','ColorBar');
+        if ~isempty(cbOld)
+            colorbar(ax);
+        end
+
+    catch ME
+        close(tmpFig);
+        rethrow(ME);
+    end
+
+    close(tmpFig);
+
+    hold(ax,'on');
+
+   % -------------------------------------------------------------
+% Overlay color-coded coils with current labels
+% -------------------------------------------------------------
+for j = 1:length(X)
+
+    dR = R2(j) - R1(j);
+
+    switch ps{j}
+        case 'PS1'
+            coilColor = [1 0 0];      % red
+        case 'TR1'
+            coilColor = [0 0 1];      % blue
+        case 'TR2'
+            coilColor = [0 0.8 0];    % green
+        otherwise
+            coilColor = [0.4 0.4 0.4];
+    end
+
+    % Current value for this coil
+    Icoil = app.I(j);
+
+    % Upper coil
+    rectangle(ax,'Position',[(X(j)-wZ(j)/2), R1(j), wZ(j), dR], ...
+        'FaceColor',coilColor, ...
+        'EdgeColor',coilColor, ...
+        'LineWidth',1);
+
+    text(ax, X(j), R1(j)+0.5*dR, sprintf('%.0f A',Icoil), ...
+        'Color','w', ...
+        'FontSize',8, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','center', ...
+        'VerticalAlignment','middle', ...
+        'Rotation',90);
+
+    % Lower coil
+    rectangle(ax,'Position',[(X(j)-wZ(j)/2), -R2(j), wZ(j), dR], ...
+        'FaceColor',coilColor, ...
+        'EdgeColor',coilColor, ...
+        'LineWidth',1);
+
+    text(ax, X(j), -R2(j)+0.5*dR, sprintf('%.0f A',Icoil), ...
+        'Color','w', ...
+        'FontSize',8, ...
+        'FontWeight','bold', ...
+        'HorizontalAlignment','center', ...
+        'VerticalAlignment','middle', ...
+        'Rotation',90);
+end
+
+    xlabel(ax,'Z (m)','FontWeight','bold');
+    ylabel(ax,'Radial Distance (m)','FontWeight','bold');
+    title(ax,'Magnetic Flux and Device Geometry','FontWeight','bold');
+
+    xlim(ax,[app.ZStartField.Value app.ZEndField.Value]);
+    ylim(ax,[-0.18 0.18]);
+
+    grid(ax,'on');
+    box(ax,'on');
+
+    hold(ax,'off');
+end
+
+        function exportData(app)
+
+            if isempty(app.Br)
+                app.setStatus('Compute B field before exporting.');
+                return
+            end
+
+            [file,path] = uiputfile('bfield_protoLite.nc','Save NetCDF File');
+
+            if isequal(file,0)
+                app.setStatus('Export cancelled.');
+                return
+            end
+
+            ncfile = fullfile(path,file);
+
+            if exist(ncfile,'file')
+                delete(ncfile);
+            end
+
+            r = app.r;
+            z = app.z;
+            Br = app.Br;
+            Bt = app.Bt;
+            Bz = app.Bz;
+            psi = app.psi;
+
+            nccreate(ncfile,'r','Dimensions',{'r',numel(r)},'Datatype','double');
+            nccreate(ncfile,'z','Dimensions',{'z',numel(z)},'Datatype','double');
+
+            ncwrite(ncfile,'r',r);
+            ncwrite(ncfile,'z',z);
+
+            nccreate(ncfile,'br','Dimensions',{'r',numel(r),'z',numel(z)},'Datatype','single');
+            nccreate(ncfile,'bt','Dimensions',{'r',numel(r),'z',numel(z)},'Datatype','single');
+            nccreate(ncfile,'bz','Dimensions',{'r',numel(r),'z',numel(z)},'Datatype','single');
+            nccreate(ncfile,'psi','Dimensions',{'r',numel(r),'z',numel(z)},'Datatype','double');
+
+            ncwrite(ncfile,'br',single(Br));
+            ncwrite(ncfile,'bt',single(Bt));
+            ncwrite(ncfile,'bz',single(Bz));
+            ncwrite(ncfile,'psi',psi);
+
+            writematrix(z,fullfile(path,'z1D.csv'));
+            writematrix(r,fullfile(path,'r1D.csv'));
+            writematrix(Br,fullfile(path,'Br2D.csv'));
+            writematrix(Bz,fullfile(path,'Bz2D.csv'));
+            writematrix(psi,fullfile(path,'psi2D.csv'));
+
+            app.setStatus(sprintf('Export complete:\n%s',ncfile));
+        end
+    end
+
+    methods (Access = public)
+
+        function app = ProtoLiteBFieldApp
+            createComponents(app)
+            registerApp(app,app.UIFigure)
+        end
+
+        function delete(app)
+            if isvalid(app.UIFigure)
+                delete(app.UIFigure)
+            end
+        end
+    end
+end
