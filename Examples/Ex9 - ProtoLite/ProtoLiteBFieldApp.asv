@@ -383,10 +383,10 @@ classdef ProtoLiteBFieldApp < matlab.apps.AppBase
         colormap(ax, colormap(srcAx));
 
         % Copy colorbar if Find_LCFS created one
-        % cbOld = findall(tmpFig,'Type','ColorBar');
-        % if ~isempty(cbOld)
-        %     colorbar(ax);
-        % end
+        cbOld = findall(tmpFig,'Type','ColorBar');
+        if ~isempty(cbOld)
+            colorbar(ax);
+        end
 
     catch ME
         close(tmpFig);
