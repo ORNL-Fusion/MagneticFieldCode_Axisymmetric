@@ -19,7 +19,7 @@
 %   - optional 3D trajectories with cylinder
 %
 % INPUT
-%   1) fullSource_Qparallel.mat
+%   1) fullSource_Qparallel.mat  (source annulus grid only)
 %   2) reference B-field .nc
 %   3) new B-field .nc
 %
@@ -63,7 +63,7 @@ fprintf('Reading fixed source file: %s ...\n', sourceFile);
 
 S = load(sourceFile);
 
-requiredVars = {'Q_parallel_full_lm','r_cent_full','theta_cent_deg'};
+requiredVars = {'r_cent_full','theta_cent_deg'};
 for k = 1:numel(requiredVars)
     if ~isfield(S, requiredVars{k})
         error('Missing variable %s in %s.', requiredVars{k}, sourceFile);
@@ -79,8 +79,8 @@ else
     z_source = 1.759;
 end
 
-Q_parallel_lm = double(S.Q_parallel_full_lm);
-[nL, nM] = size(S.Q_parallel_full_lm);
+nL = numel(r_cent);
+nM = numel(theta_cent_deg);
 
 fprintf('Loaded source annulus size = [%d x %d]\n', nL, nM);
 fprintf('z_source = %.6f m\n', z_source);
@@ -466,9 +466,17 @@ function [ok, th_hit, z_hit, xpath, ypath, zpath_] = trace_point_to_cylinder( ..
         bt_u = bt_now / Bmag_now;
         bz_u = bz_now / Bmag_now;
 
-        dr_ds = trace_sign * br_u;
-        dtheta_ds = trace_sign * bt_u / max(r_now, 1e-8);
-        dz_ds = trace_sign * bz_u;
+        % Align step direction with bz sign so trace_sign=+1 always advances
+        % in the chosen along-B direction regardless of local Bz sign.
+        if bz_u ~= 0
+            sgn = trace_sign * sign(bz_u);
+        else
+            sgn = trace_sign;
+        end
+
+        dr_ds = sgn * br_u;
+        dtheta_ds = sgn * bt_u / max(r_now, 1e-8);
+        dz_ds = sgn * bz_u;
 
         r_next = r_now + dr_ds * ds_trace;
         th_next_deg = mod(th_now_deg + rad2deg(dtheta_ds * ds_trace), 360);
@@ -479,7 +487,8 @@ function [ok, th_hit, z_hit, xpath, ypath, zpath_] = trace_point_to_cylinder( ..
         if crossed
             f = (R_cyl - r_now) / (r_next - r_now);
             if f >= 0 && f <= 1
-                th_hit = mod(th_now_deg + f * (th_next_deg - th_now_deg), 360);
+                dth_hit = mod(th_next_deg - th_now_deg + 180, 360) - 180;
+                th_hit = mod(th_now_deg + f * dth_hit, 360);
                 z_hit = z_now + f * (z_next - z_now);
 
                 xhit = R_cyl * cosd(th_hit);

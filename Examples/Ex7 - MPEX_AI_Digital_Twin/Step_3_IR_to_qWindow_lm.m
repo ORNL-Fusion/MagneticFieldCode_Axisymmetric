@@ -38,16 +38,24 @@ clear; close all; clc;
 %% ------------------------------------------------------------------------
 % USER INPUTS
 % -------------------------------------------------------------------------
-irFile      = 'CompositeData_ShotSeries_1.mat';
+% Path to the folder produced by the heat-flux post-processing pipeline
+% (the script that loads HeatfluxData_ShotSeries_*.mat and saves w).
+irDataPath  = '/Users/78k/ORNL Dropbox/Atul Kumar/work/STRIPE-Analysis/protoMPEX/ProtoMPEX_Ops/2020/2020_02/HeliconWindow_IR/HomographicReconstruction/Method_2/';
+irFile      = fullfile(irDataPath, 'HeatfluxData_ShotSeries_1.mat');
 profileFile = 'bfield_protoMPEX_shotSeries_1.nc';
 outFile     = 'window_bundle_qWindow_fromIntersections.mat';
 
 % IR frame selection
-frameMode   = 'max';      % 'single', 'mean', 'max'
-singleFrame = 34;
-
-% IR axial coordinate conversion
-convert_cm_to_m = false;
+%   'single'      -> one specific frame (singleFrame index)
+%   'mean'        -> time-average over ALL frames
+%   'max'         -> absolute maximum over all frames (picks transient spikes; NOT recommended)
+%   'range_mean'  -> time-average over a contiguous frame range (recommended for steady-state)
+%   'percentile'  -> spatial percentile over all frames (use framePercentile, e.g. 90)
+frameMode        = 'range_mean';
+singleFrame      = 34;
+frameRange       = [25, 45];  % [first, last] frame indices for 'range_mean'
+                              % frames 25-45 ≈ t=0.24-0.43 s (steady-state plasma-on window)
+framePercentile  = 90;        % percentile for 'percentile' mode (0-100)
 
 % Physical center of experimental window in machine coordinates
 z_window_center_machine = 1.75915;   % [m]
@@ -119,35 +127,43 @@ end
 %% ------------------------------------------------------------------------
 % STEP 0. LOAD IR DATA q^W(theta,z)
 % -------------------------------------------------------------------------
-fprintf('Reading IR data: %s ...\n', irFile);
+fprintf('Reading heat-flux data: %s ...\n', irFile);
 
-S_ir = load(irFile);
-if ~isfield(S_ir, 'f')
-    error('Expected structure f in %s.', irFile);
-end
+raw = load(irFile);
 
-f = S_ir.f;
-requiredFields = {'dT','phi_2D','s_2D'};
-for k = 1:numel(requiredFields)
-    if ~isfield(f, requiredFields{k})
-        error('Missing field f.%s in IR file.', requiredFields{k});
+% Heat-flux files save the processed structure as variable 'w'.
+% Fall back gracefully if the file contains a single variable with another name.
+if isfield(raw, 'w')
+    w = raw.w;
+else
+    fnames = fieldnames(raw);
+    if isscalar(fnames)
+        w = raw.(fnames{1});
+        fprintf('  Using single variable ''%s'' as heat-flux structure.\n', fnames{1});
+    else
+        error(['Cannot identify heat-flux structure in %s. ', ...
+               'Expected variable ''w'' with fields qnorm, q0, phi_2D, z_2D.'], irFile);
     end
 end
 
-IR     = double(f.dT);
-phi_2D = double(f.phi_2D);
-s_2D   = double(f.s_2D);
+requiredFields = {'qnorm','q0','phi_2D','z_2D'};
+for k = 1:numel(requiredFields)
+    if ~isfield(w, requiredFields{k})
+        error('Missing field w.%s in heat-flux file %s.', requiredFields{k}, irFile);
+    end
+end
+
+% Actual heat flux [W/m^2] = normalised map × calibration scale factor
+q0_scale = double(w.q0);
+IR        = double(w.qnorm) * q0_scale;   % [nZ x nTheta x nFrames], W/m^2
+
+phi_2D = double(w.phi_2D);   % azimuthal angle [deg]
+z_2D   = double(w.z_2D);     % axial coordinate [m], local window frame
 
 [~, ~, nf] = size(IR);
 
 theta_deg_ir = mod(double(phi_2D(1,:)), 360);
-z_like = double(s_2D(:,1));
-
-if convert_cm_to_m
-    z_local_m = z_like * 1e-2;
-else
-    z_local_m = z_like;
-end
+z_local_m    = double(z_2D(:,1));   % already in metres; no unit conversion needed
 
 switch lower(zAlignmentMode)
     case 'center_on_window'
@@ -168,18 +184,62 @@ IR = IR(idxZ, :, :);
 switch lower(frameMode)
     case 'single'
         if singleFrame < 1 || singleFrame > nf
-            error('singleFrame out of range.');
+            error('singleFrame=%d out of range [1,%d].', singleFrame, nf);
         end
         q_window_frame = IR(:,:,singleFrame);
+        fprintf('IR frame selection: single frame %d\n', singleFrame);
+
     case 'mean'
         q_window_frame = mean(IR, 3, 'omitnan');
+        fprintf('IR frame selection: mean over all %d frames\n', nf);
+
     case 'max'
         q_window_frame = max(IR, [], 3, 'omitnan');
+        fprintf('IR frame selection: MAX over all %d frames  (WARNING: includes transient spikes)\n', nf);
+
+    case 'range_mean'
+        if ~exist('frameRange','var') || numel(frameRange) ~= 2
+            error('frameRange must be a 2-element [first, last] for range_mean mode.');
+        end
+        fr1 = max(1, round(frameRange(1)));
+        fr2 = min(nf, round(frameRange(2)));
+        if fr1 > fr2
+            error('frameRange [%d,%d] is empty.', fr1, fr2);
+        end
+        q_window_frame = mean(IR(:,:,fr1:fr2), 3, 'omitnan');
+        % Compute physical time if t_qnorm available
+        if isfield(w, 't_qnorm') && isfield(w, 't_star')
+            t_phys = w.t_qnorm * w.t_star;
+            fprintf('IR frame selection: mean over frames %d-%d  (t = %.3f - %.3f s)\n', ...
+                fr1, fr2, t_phys(fr1), t_phys(fr2));
+        else
+            fprintf('IR frame selection: mean over frames %d-%d\n', fr1, fr2);
+        end
+
+    case 'percentile'
+        if ~exist('framePercentile','var')
+            framePercentile = 90;
+        end
+        q_window_frame = prctile(IR, framePercentile, 3);
+        fprintf('IR frame selection: %g-th percentile over all %d frames\n', framePercentile, nf);
+
     otherwise
-        error('Unknown frameMode: %s', frameMode);
+        error('Unknown frameMode: %s. Valid: single, mean, max, range_mean, percentile.', frameMode);
 end
 
 q_window_frame(~isfinite(q_window_frame)) = NaN;
+
+% Quick sanity check on the selected heat flux frame
+pos_vals = q_window_frame(q_window_frame > 0);
+fprintf('[CHECK] q_window selected frame: max=%.3e  mean_pos=%.3e  median_pos=%.3e W/m^2\n', ...
+    max(q_window_frame(:),[],'omitnan'), ...
+    mean(pos_vals,'omitnan'), median(pos_vals,'omitnan'));
+fprintf('[CHECK] That is: max=%.1f  mean_pos=%.1f  median_pos=%.1f kW/m^2\n', ...
+    max(q_window_frame(:),[],'omitnan')/1e3, ...
+    mean(pos_vals,'omitnan')/1e3, median(pos_vals,'omitnan')/1e3);
+if max(q_window_frame(:),[],'omitnan') > 5e6
+    warning('Peak q_window > 5 MW/m^2 — check frame selection. Use range_mean for steady-state.');
+end
 
 [theta_deg_ir_unique, ia] = unique(theta_deg_ir, 'stable');
 q_window_frame_unique = q_window_frame(:, ia);
@@ -484,11 +544,14 @@ r_window_lm(lowCountMask) = NaN;
 seed_r_lm(lowCountMask) = NaN;
 seed_theta_deg_lm(lowCountMask) = NaN;
 
-valid = isfinite(q_window_lm);
+measured_bin_mask = isfinite(q_window_lm) & isfinite(z_window_lm) & isfinite(theta_window_deg_lm);
+q_window_lm_filled = q_window_lm;
+
+valid = isfinite(q_window_lm_filled);
 if any(valid(:)) && any(~valid(:))
     [MM, LL] = meshgrid(1:nM, 1:nL);
     valid_pts = [LL(valid), MM(valid)];
-    valid_vals = q_window_lm(valid);
+    valid_vals = q_window_lm_filled(valid);
 
     missing = ~valid;
     missing_pts = [LL(missing), MM(missing)];
@@ -496,7 +559,7 @@ if any(valid(:)) && any(~valid(:))
     for k = 1:size(missing_pts,1)
         d2 = sum((valid_pts - missing_pts(k,:)).^2, 2);
         [~, idx] = min(d2);
-        q_window_lm(missing_pts(k,1), missing_pts(k,2)) = valid_vals(idx);
+        q_window_lm_filled(missing_pts(k,1), missing_pts(k,2)) = valid_vals(idx);
     end
 end
 
@@ -513,8 +576,9 @@ end
 %% ------------------------------------------------------------------------
 % STEP 6. DIAGNOSTICS
 % -------------------------------------------------------------------------
-fprintf('Final annulus map finite q_window_lm = %d / %d\n', ...
-    sum(isfinite(q_window_lm(:))), numel(q_window_lm));
+fprintf('Measured annulus bins = %d / %d\n', nnz(measured_bin_mask), numel(measured_bin_mask));
+fprintf('Display-filled q_window_lm_filled bins = %d / %d\n', ...
+    sum(isfinite(q_window_lm_filled(:))), numel(q_window_lm_filled));
 fprintf('Min q_window_lm = %g\n', min(q_window_lm(:), [], 'omitnan'));
 fprintf('Max q_window_lm = %g\n', max(q_window_lm(:), [], 'omitnan'));
 
@@ -677,7 +741,7 @@ if makePlots
     axis equal;
     xlabel('x [m]');
     ylabel('y [m]');
-    title('Annulus built from flux-tube identity');
+    title('Measured annulus built from flux-tube identity');
     colorbar;
 
     figure('Color','w','Position',[120 120 1000 420]);
@@ -706,8 +770,10 @@ z_window_nominal = 0.5 * (min(z_ir_m) + max(z_ir_m));
 
 save(outFile, ...
     'q_window_lm', ...
+    'q_window_lm_filled', ...
     'q_window_std_lm', ...
     'tube_count_lm', ...
+    'measured_bin_mask', ...
     'theta_cent_deg', ...
     'theta_edges_deg', ...
     'r_cent', ...
@@ -794,7 +860,8 @@ function [ok, r_hit, th_hit, z_hit] = trace_to_cyl_window_fast( ...
         if crossed
             f = (R_window - r_now) / (r_next - r_now);
             r_hit = R_window;
-            th_hit = mod(th_now_deg + f * (th_next_deg - th_now_deg), 360);
+            dth_hit = mod(th_next_deg - th_now_deg + 180, 360) - 180;
+            th_hit = mod(th_now_deg + f * dth_hit, 360);
             z_hit = z_now + f * (z_next - z_now);
             ok = true;
             return;

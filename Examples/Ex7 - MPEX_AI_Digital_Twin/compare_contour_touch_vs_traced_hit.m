@@ -390,7 +390,8 @@ function [ok, r_hit, th_hit, z_hit, r_path, z_path] = trace_to_cyl_window_fast( 
         if crossed
             f = (R_window - r_now) / (r_next - r_now);
             r_hit = R_window;
-            th_hit = mod(th_now_deg + f * (th_next_deg - th_now_deg), 360);
+            dth_hit = mod(th_next_deg - th_now_deg + 180, 360) - 180;
+            th_hit = mod(th_now_deg + f * dth_hit, 360);
             z_hit = z_now + f * (z_next - z_now);
 
             r_path(is) = r_hit;
