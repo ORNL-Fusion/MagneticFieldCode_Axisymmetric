@@ -178,7 +178,7 @@ rng = find(xq >= xmin & xq <= xmax);
 x0 = xq(rng(in));
 
 % Normalize data:
-B_norm = B;
+B_norm = B./B0;
 
 figure('color','w')
 hold on

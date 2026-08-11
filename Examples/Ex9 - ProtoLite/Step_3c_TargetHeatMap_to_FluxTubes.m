@@ -105,6 +105,19 @@ end
 
 Fpsi = griddedInterpolant({r,z}, psi, "linear", "none");
 
+Br_field = double(ncread(bfieldFile, "br"));
+Bt_field = double(ncread(bfieldFile, "bt"));
+Bz_field = double(ncread(bfieldFile, "bz"));
+
+if ~isequal(size(Bz_field), [numel(r), numel(z)])
+    Br_field = permute(Br_field, [2 1]);
+    Bt_field = permute(Bt_field, [2 1]);
+    Bz_field = permute(Bz_field, [2 1]);
+end
+
+Bmag = sqrt(Br_field.^2 + Bt_field.^2 + Bz_field.^2);
+FBmag = griddedInterpolant({r, z}, Bmag, "linear", "none");
+
 %% ===================== BUILD Z LINE ==================================
 
 zline = z_target:dz_map:z_start;
@@ -118,6 +131,7 @@ z_path_all = cell(nTrace,1);
 r_path_all = cell(nTrace,1);
 
 q_trace = q_avg(idx_trace);
+B_target_all = NaN(nTrace, 1);
 
 for i = 1:nTrace
 
@@ -125,6 +139,7 @@ for i = 1:nTrace
     th = ThetaTarget_deg(idx_trace(i));
 
     psi0 = Fpsi(r0, z_target);
+    B_target_all(i) = FBmag(r0, z_target);
 
     if ~isfinite(psi0)
         continue
@@ -279,7 +294,7 @@ for is = 1:numel(z_sample_values)
     zslice = z_sample_values(is);
 
     [~, ~, rs, ~, qs] = sample_flux_tubes_at_z( ...
-        x_path_all, y_path_all, z_path_all, q_trace, zslice);
+        x_path_all, y_path_all, z_path_all, q_trace, zslice, FBmag, B_target_all);
 
     if isempty(rs)
         continue
@@ -347,7 +362,7 @@ for is = 1:numel(z_slice_values)
     zslice = z_slice_values(is);
 
     [xs, ys, ~, ~, qs] = sample_flux_tubes_at_z( ...
-        x_path_all, y_path_all, z_path_all, q_trace, zslice);
+        x_path_all, y_path_all, z_path_all, q_trace, zslice, FBmag, B_target_all);
 
     subplot(1,3,is)
 
@@ -381,7 +396,7 @@ sgtitle("Target Heat Flux Carried by Flux Tubes at Selected Axial Planes")
 
 save(outputFile, ...
     "x_path_all", "y_path_all", "z_path_all", "r_path_all", ...
-    "q_trace", "idx_trace", ...
+    "q_trace", "B_target_all", "idx_trace", ...
     "z_target", "z_start", "z_end", "zline", ...
     "X", "R1", "R2", "wZ", "ps", ...
     "vessel_top_z", "vessel_top_R", ...
@@ -482,7 +497,7 @@ function rline = map_psi_to_rline(psi0, rgrid, zline, Fpsi)
 end
 
 function [xs, ys, rs, ths, qs] = sample_flux_tubes_at_z( ...
-    x_path_all, y_path_all, z_path_all, q_trace, zslice)
+    x_path_all, y_path_all, z_path_all, q_trace, zslice, FBmag, B_target_all)
 
     xs = [];
     ys = [];
@@ -522,7 +537,13 @@ function [xs, ys, rs, ths, qs] = sample_flux_tubes_at_z( ...
         ys(end+1,1) = yq;
         rs(end+1,1) = rq;
         ths(end+1,1) = thq;
-        qs(end+1,1) = q_trace(i);
+        B_local = FBmag(rq, zslice);
+        B_ref   = B_target_all(i);
+        if isfinite(B_local) && isfinite(B_ref) && B_ref > 0
+            qs(end+1,1) = q_trace(i) * B_local / B_ref;
+        else
+            qs(end+1,1) = q_trace(i);
+        end
     end
 end
 

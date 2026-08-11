@@ -16,8 +16,26 @@ ps = data1.ps;
 z_start = -0.25;
 z_end   = 3.5;
 
+% Shot Number: 1002391
+% TR1: 320->240
+% TR2: 2.4
+% PS1: 3.580
+% Full pulse
+% 
+% Shot Number: 1002392
+% TR1: 240->480
+% TR2: 2.4
+% PS1: 3.580
+% Full pulse
+% 
+
 % ----- Map current names ----------
-mapping = containers.Map({'PS1', 'TR2', 'TR1'}, [1575, 220, 1575]);
+mapping = containers.Map({'PS1', 'TR2', 'TR1'}, [1575, 240, 1575]); %Shot 2392
+% mapping = containers.Map({'PS1', 'TR2', 'TR1'}, [1575, 120, 1200]); % Shot 2391
+% mapping = containers.Map({'PS1', 'TR2', 'TR1'}, [1571.28, 164, 1592]); % Shot 2091
+
+
+
 
 I = zeros(size(ps));
 for idx = 1:length(ps)

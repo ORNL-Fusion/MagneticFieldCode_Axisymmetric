@@ -6,6 +6,8 @@
 %   - Treat it as an annular source on a PLANE z = z_source
 %   - Trace each annular patch to a PLANE target z = z_target
 %   - Reconstruct plane-surface heat fluxes from mapped footprint area
+%   - Plot the window-derived heat map projected along the flux tube at
+%     the dump, helicon, and target axial planes
 %
 % IMPORTANT CONSISTENCY
 %   - qTransferMode controls how Q_parallel_full_lm is interpreted:
@@ -43,7 +45,10 @@ sourceFile  = 'fullSource_Qparallel.mat';
 outFile     = 'trueAnnulusSource_toTarget_fromFullQparallel_output.nc';
 
 z_source = 1.75915;         % [m]
-z_target = 3.900;         % [m]
+z_target = 4.140;           % [m]
+
+z_projection_planes = [0.500, 1.754, z_target];  % [m]
+z_projection_labels = {'Dump', 'Helicon', 'Target'};
 
 dz_trace = 0.001;         % [m]
 nStepsMax = 7000;
@@ -58,8 +63,14 @@ nYt = 320;
 enforceMeasuredRadialSupport = true;
 
 makePlots = true;
-makeTrajectoryPlot = true;
+makeTrajectoryPlot = false;  % legacy sparse source-to-target line plot
 nTrajToPlot = 60;
+
+makeFluxTube3DPlot = true;
+maxTubesToPlot3D = 2000;
+tubeSelectionMode3D = 'weighted';  % 'top', 'random', or 'weighted'
+coilGeometryFile = 'protoMPEX_coil_setup.txt';
+useExtrapolatedFieldForVisualization = true;
 
 %% ------------------------------------------------------------------------
 % STEP 0. LOAD MAGNETIC FIELD
@@ -88,10 +99,28 @@ end
 if z_target < min(z) || z_target > max(z)
     error('z_target is outside magnetic-field domain.');
 end
+if numel(z_projection_labels) ~= numel(z_projection_planes)
+    error('z_projection_labels must have one entry per z_projection_planes value.');
+end
+if any(z_projection_planes < min(z) | z_projection_planes > max(z))
+    error('At least one requested projection plane is outside magnetic-field domain.');
+end
 
 FBr = griddedInterpolant({r, z}, Br, 'linear', 'none');
 FBt = griddedInterpolant({r, z}, Bt, 'linear', 'none');
 FBz = griddedInterpolant({r, z}, Bz, 'linear', 'none');
+
+if useExtrapolatedFieldForVisualization
+    FBr_viz = griddedInterpolant({r, z}, Br, 'linear', 'nearest');
+    FBt_viz = griddedInterpolant({r, z}, Bt, 'linear', 'nearest');
+    FBz_viz = griddedInterpolant({r, z}, Bz, 'linear', 'nearest');
+    stop_if_outside_grid_viz = false;
+else
+    FBr_viz = FBr;
+    FBt_viz = FBt;
+    FBz_viz = FBz;
+    stop_if_outside_grid_viz = stop_if_outside_grid;
+end
 
 %% ------------------------------------------------------------------------
 % STEP 1. LOAD FIXED Q_lm SOURCE MAP
@@ -486,7 +515,157 @@ mask = q_target_count > 0;
 q_target_map(mask) = q_target_sum(mask) ./ q_target_count(mask);
 
 %% ------------------------------------------------------------------------
-% STEP 8. DIAGNOSTICS
+% STEP 8. BUILD REQUESTED AXIAL PROJECTION HEATMAPS
+% -------------------------------------------------------------------------
+fprintf('Building flux-tube projection heatmaps at requested z planes ...\n');
+
+nProjectionPlanes = numel(z_projection_planes);
+projectionMaps = struct('label', {}, 'z', {}, 'x_grid', {}, 'y_grid', {}, ...
+                        'q_map', {}, 'q_lm', {}, 'A_lm', {}, ...
+                        'patch_ok', {}, 'x_c', {}, 'y_c', {}, ...
+                        'fallback_mode', {});
+
+q_center_projection_lm = q_source_lm;
+if ~any(isfinite(q_center_projection_lm(:)))
+    q_center_projection_lm = q_parallel_lm;
+end
+
+for ip = 1:nProjectionPlanes
+    z_plane = z_projection_planes(ip);
+    fprintf('  %s plane: z = %.6f m ...\n', z_projection_labels{ip}, z_plane);
+    fallback_mode = 'polygon';
+
+    if abs(z_plane - z_target) < 1e-9
+        x_plane_c = xt_c;
+        y_plane_c = yt_c;
+        patch_ok_plane = patch_ok;
+        A_plane_lm = A_target_lm;
+        q_plane_lm = q_target_lm;
+    else
+        [x_plane_c, y_plane_c, ~, patch_ok_plane] = trace_patch_corners_to_plane( ...
+            xsrc_c, ysrc_c, zsrc_c, z_plane, ...
+            FBr, FBt, FBz, r, z, dz_trace, nStepsMax, stop_if_outside_grid);
+
+        [A_plane_lm, q_plane_lm] = compute_plane_heat_flux_lm( ...
+            x_plane_c, y_plane_c, patch_ok_plane, P_tube_lm);
+    end
+
+    [x_plane_grid, y_plane_grid, q_plane_map] = rasterize_plane_heat_flux_map( ...
+        x_plane_c, y_plane_c, patch_ok_plane, q_plane_lm, nXt, nYt, pad);
+
+    if ~any(isfinite(q_plane_map(:))) && useExtrapolatedFieldForVisualization && ...
+       abs(z_plane - z_target) >= 1e-9
+        warning('%s z = %.6f m polygon heat map is empty; retrying with visualization-only nearest-extrapolated B field.', ...
+            z_projection_labels{ip}, z_plane);
+
+        [x_plane_c, y_plane_c, ~, patch_ok_plane] = trace_patch_corners_to_plane( ...
+            xsrc_c, ysrc_c, zsrc_c, z_plane, ...
+            FBr_viz, FBt_viz, FBz_viz, r, z, dz_trace, nStepsMax, stop_if_outside_grid_viz);
+
+        [A_plane_lm, q_plane_lm] = compute_plane_heat_flux_lm( ...
+            x_plane_c, y_plane_c, patch_ok_plane, P_tube_lm);
+
+        [x_plane_grid, y_plane_grid, q_plane_map] = rasterize_plane_heat_flux_map( ...
+            x_plane_c, y_plane_c, patch_ok_plane, q_plane_lm, nXt, nYt, pad);
+
+        fallback_mode = 'polygon_nearest_extrapolated_B';
+    end
+
+    if ~any(isfinite(q_plane_map(:))) && abs(z_plane - z_target) >= 1e-9
+        warning('%s z = %.6f m polygon heat map is still empty; using centerline-scattered heat map fallback.', ...
+            z_projection_labels{ip}, z_plane);
+
+        [x_plane_grid, y_plane_grid, q_plane_map, q_plane_lm, patch_ok_plane, ...
+            x_center_lm, y_center_lm] = rasterize_centerline_projection_heat_map( ...
+                R_LM, THETA_LM_DEG, z_source, z_plane, ...
+                FBr_viz, FBt_viz, FBz_viz, r, z, dz_trace, nStepsMax, ...
+                stop_if_outside_grid_viz, q_center_projection_lm, nXt, nYt, pad);
+
+        x_plane_c = repmat(x_center_lm, 1, 1, 4);
+        y_plane_c = repmat(y_center_lm, 1, 1, 4);
+        A_plane_lm = NaN(size(q_plane_lm));
+        fallback_mode = 'centerline_scattered';
+    end
+
+    projectionMaps(ip).label = z_projection_labels{ip};
+    projectionMaps(ip).z = z_plane;
+    projectionMaps(ip).x_grid = x_plane_grid;
+    projectionMaps(ip).y_grid = y_plane_grid;
+    projectionMaps(ip).q_map = q_plane_map;
+    projectionMaps(ip).q_lm = q_plane_lm;
+    projectionMaps(ip).A_lm = A_plane_lm;
+    projectionMaps(ip).patch_ok = patch_ok_plane;
+    projectionMaps(ip).x_c = x_plane_c;
+    projectionMaps(ip).y_c = y_plane_c;
+    projectionMaps(ip).fallback_mode = fallback_mode;
+
+    fprintf('    mapped patches = %d / %d, max q_map = %.6e W/m^2, mode = %s\n', ...
+        nnz(patch_ok_plane), numel(patch_ok_plane), max(q_plane_map(:), [], 'omitnan'), ...
+        fallback_mode);
+end
+
+%% ------------------------------------------------------------------------
+% STEP 9. TRACE SELECTED 3D FLUX TUBES FOR PLOTTING
+% -------------------------------------------------------------------------
+if makeFluxTube3DPlot
+    fprintf('Tracing selected 3D flux tubes in Step_3c style ...\n');
+
+    z_flux_start = min(z_projection_planes);
+    z_flux_end = max(z_projection_planes);
+
+    q_fluxTubeColor_lm = q_source_lm;
+    if ~any(isfinite(q_fluxTubeColor_lm(:)))
+        q_fluxTubeColor_lm = q_parallel_lm;
+    end
+
+    validFluxTubeMask = isfinite(q_fluxTubeColor_lm) & isfinite(P_tube_lm) & ...
+                        isfinite(R_LM) & isfinite(THETA_LM_DEG);
+    idx_valid_flux = find(validFluxTubeMask);
+
+    if isempty(idx_valid_flux)
+        warning('No valid flux-tube centers available for the 3D plot.');
+        idx_trace_flux = [];
+        q_trace_flux = [];
+        x_path_all = {};
+        y_path_all = {};
+        z_path_all = {};
+        r_path_all = {};
+    else
+        idx_trace_flux = select_flux_tube_indices( ...
+            idx_valid_flux, q_fluxTubeColor_lm(:), maxTubesToPlot3D, tubeSelectionMode3D);
+
+        nTraceFlux = numel(idx_trace_flux);
+        q_trace_flux = q_fluxTubeColor_lm(idx_trace_flux);
+
+        x_path_all = cell(nTraceFlux, 1);
+        y_path_all = cell(nTraceFlux, 1);
+        z_path_all = cell(nTraceFlux, 1);
+        r_path_all = cell(nTraceFlux, 1);
+
+        R_trace = R_LM(idx_trace_flux);
+        THETA_trace = THETA_LM_DEG(idx_trace_flux);
+
+        for it = 1:nTraceFlux
+            [ok, x_path_i, y_path_i, z_path_i, r_path_i] = trace_flux_tube_between_planes( ...
+                R_trace(it), THETA_trace(it), z_source, z_flux_start, z_flux_end, ...
+                FBr_viz, FBt_viz, FBz_viz, r, z, dz_trace, nStepsMax, ...
+                stop_if_outside_grid_viz);
+
+            if ok
+                x_path_all{it} = x_path_i;
+                y_path_all{it} = y_path_i;
+                z_path_all{it} = z_path_i;
+                r_path_all{it} = r_path_i;
+            end
+        end
+
+        fprintf('Selected 3D flux tubes = %d; traced full dump-to-target paths = %d\n', ...
+            nTraceFlux, nnz(~cellfun(@isempty, x_path_all)));
+    end
+end
+
+%% ------------------------------------------------------------------------
+% STEP 10. DIAGNOSTICS
 % -------------------------------------------------------------------------
 fprintf('Finite q_target_lm = %d / %d\n', sum(isfinite(q_target_lm(:))), numel(q_target_lm));
 fprintf('Max q_target_lm    = %.6e W/m^2\n', max(q_target_lm(:), [], 'omitnan'));
@@ -527,7 +706,7 @@ if strcmpi(qTransferMode_source, 'parallel_from_window_incidence')
 end
 
 %% ------------------------------------------------------------------------
-% STEP 9. PLOTS
+% STEP 11. PLOTS
 % -------------------------------------------------------------------------
 if makePlots
     figure('Color','w','Position',[100 100 1100 420]);
@@ -618,6 +797,63 @@ if makePlots
     title('Continuous rasterized target heat-flux map');
     colorbar;
 
+    projectionQValues = [];
+    xProjectionLimits = [Inf, -Inf];
+    yProjectionLimits = [Inf, -Inf];
+    for ip = 1:nProjectionPlanes
+        qv = projectionMaps(ip).q_map(:);
+        projectionQValues = [projectionQValues; qv(isfinite(qv))]; %#ok<AGROW>
+        xProjectionLimits(1) = min(xProjectionLimits(1), min(projectionMaps(ip).x_grid));
+        xProjectionLimits(2) = max(xProjectionLimits(2), max(projectionMaps(ip).x_grid));
+        yProjectionLimits(1) = min(yProjectionLimits(1), min(projectionMaps(ip).y_grid));
+        yProjectionLimits(2) = max(yProjectionLimits(2), max(projectionMaps(ip).y_grid));
+    end
+
+    if isempty(projectionQValues)
+        projectionColorMax = 1;
+    else
+        projectionColorMax = max(projectionQValues);
+    end
+
+    if any(~isfinite([xProjectionLimits, yProjectionLimits])) || ...
+       xProjectionLimits(2) <= xProjectionLimits(1) || ...
+       yProjectionLimits(2) <= yProjectionLimits(1)
+        xProjectionLimits = [-0.1, 0.1];
+        yProjectionLimits = [-0.1, 0.1];
+    end
+
+    figure('Color','w','Position',[80 80 1450 440]);
+    for ip = 1:nProjectionPlanes
+        subplot(1, nProjectionPlanes, ip);
+        imagesc(projectionMaps(ip).x_grid, projectionMaps(ip).y_grid, projectionMaps(ip).q_map);
+        set(gca,'YDir','normal');
+        axis equal;
+        xlim(xProjectionLimits);
+        ylim(yProjectionLimits);
+        if isfinite(projectionColorMax) && projectionColorMax > 0
+            caxis([0 projectionColorMax]);
+        end
+        xlabel('x [m]');
+        ylabel('y [m]');
+        titleText = sprintf('%s z = %.3f m', projectionMaps(ip).label, projectionMaps(ip).z);
+        if ~strcmpi(projectionMaps(ip).fallback_mode, 'polygon')
+            titleText = sprintf('%s (%s)', titleText, projectionMaps(ip).fallback_mode);
+        end
+        title(titleText, 'Interpreter', 'none');
+        colorbar;
+    end
+    colormap(gcf, parula);
+    if exist('sgtitle', 'file')
+        sgtitle('Window heat map projected along flux tube');
+    end
+
+    if makeFluxTube3DPlot && exist('x_path_all','var')
+        plot_mpex_flux_tubes_3D( ...
+            x_path_all, y_path_all, z_path_all, q_trace_flux, ...
+            z_projection_planes, z_projection_labels, z_source, z_target, ...
+            coilGeometryFile);
+    end
+
     if makeTrajectoryPlot && exist('x_path','var')
         figure('Color','w');
         hold on;
@@ -651,7 +887,7 @@ if makePlots
 end
 
 %% ------------------------------------------------------------------------
-% STEP 10. SAVE OUTPUT
+% STEP 12. SAVE OUTPUT
 % -------------------------------------------------------------------------
 fprintf('Writing %s ...\n', outFile);
 
@@ -781,4 +1017,935 @@ function [ok, xhit, yhit, zhit, xpath, ypath, zpath_] = trace_point_to_target( .
         ypath(is) = r_now * sind(th_now_deg);
         zpath_(is) = z_now;
     end
+end
+
+function idx_trace = select_flux_tube_indices(idx_valid, q_values, maxN, mode)
+
+    idx_valid = idx_valid(:);
+
+    if numel(idx_valid) <= maxN
+        idx_trace = idx_valid;
+        return;
+    end
+
+    mode = lower(char(mode));
+
+    switch mode
+        case 'top'
+            [~, order] = sort(q_values(idx_valid), 'descend');
+            idx_trace = idx_valid(order(1:maxN));
+
+        case 'random'
+            rng(1);
+            order = randperm(numel(idx_valid), maxN);
+            idx_trace = idx_valid(order);
+
+        case 'weighted'
+            nTop = round(0.45 * maxN);
+            nRand = maxN - nTop;
+
+            [~, orderTop] = sort(q_values(idx_valid), 'descend');
+            idx_top = idx_valid(orderTop(1:nTop));
+
+            remaining = setdiff(idx_valid, idx_top);
+            rng(1);
+
+            if numel(remaining) > nRand
+                idx_rand = remaining(randperm(numel(remaining), nRand));
+            else
+                idx_rand = remaining;
+            end
+
+            idx_trace = [idx_top(:); idx_rand(:)];
+
+        otherwise
+            error('Unknown tubeSelectionMode3D: %s', mode);
+    end
+end
+
+function [ok, x_path, y_path, z_path, r_path] = trace_flux_tube_between_planes( ...
+    r0, th0_deg, z0, z_start, z_end, FBr, FBt, FBz, r_grid, z_grid, ...
+    dz_trace, nStepsMax, stop_if_outside_grid)
+
+    ok = false;
+    x_path = [];
+    y_path = [];
+    z_path = [];
+    r_path = [];
+
+    [ok_back, ~, ~, ~, x_back, y_back, z_back] = trace_point_to_target( ...
+        r0, th0_deg, z0, FBr, FBt, FBz, r_grid, z_grid, z_start, ...
+        dz_trace, nStepsMax, stop_if_outside_grid);
+
+    [ok_fwd, ~, ~, ~, x_fwd, y_fwd, z_fwd] = trace_point_to_target( ...
+        r0, th0_deg, z0, FBr, FBt, FBz, r_grid, z_grid, z_end, ...
+        dz_trace, nStepsMax, stop_if_outside_grid);
+
+    if ~ok_back || ~ok_fwd
+        return;
+    end
+
+    good_back = isfinite(x_back) & isfinite(y_back) & isfinite(z_back);
+    good_fwd = isfinite(x_fwd) & isfinite(y_fwd) & isfinite(z_fwd);
+
+    if nnz(good_back) < 2 || nnz(good_fwd) < 2
+        return;
+    end
+
+    x_back = x_back(good_back);
+    y_back = y_back(good_back);
+    z_back = z_back(good_back);
+
+    x_fwd = x_fwd(good_fwd);
+    y_fwd = y_fwd(good_fwd);
+    z_fwd = z_fwd(good_fwd);
+
+    x_fwd = x_fwd(:);
+    y_fwd = y_fwd(:);
+    z_fwd = z_fwd(:);
+
+    x_path = [flipud(x_back(:)); x_fwd(2:end)];
+    y_path = [flipud(y_back(:)); y_fwd(2:end)];
+    z_path = [flipud(z_back(:)); z_fwd(2:end)];
+
+    x_path = x_path(:);
+    y_path = y_path(:);
+    z_path = z_path(:);
+    r_path = hypot(x_path, y_path);
+
+    ok = true;
+end
+
+function plot_mpex_flux_tubes_3D( ...
+    x_path_all, y_path_all, z_path_all, q_trace, ...
+    z_projection_planes, z_projection_labels, z_source, z_target, coilGeometryFile)
+
+    if isempty(x_path_all) || isempty(q_trace) || ~any(isfinite(q_trace))
+        warning('Skipping 3D flux-tube plot because no traced tubes have finite heat-flux values.');
+        return;
+    end
+
+    cmap = get_heat_colormap(256);
+    qmin = min(q_trace(:), [], 'omitnan');
+    qmax = max(q_trace(:), [], 'omitnan');
+
+    if ~isfinite(qmin) || ~isfinite(qmax)
+        warning('Skipping 3D flux-tube plot because color limits are not finite.');
+        return;
+    end
+
+    figure('Color','w','Position',[60 60 1500 900]);
+    hold on;
+    grid on;
+    box on;
+
+    geom = plot_mpex_device_3D(coilGeometryFile, z_projection_planes, z_projection_labels);
+
+    plot3([0 0], [0 0], [min(z_projection_planes) max(z_projection_planes)], ...
+        'k--', 'LineWidth', 1.0);
+
+    for it = 1:numel(x_path_all)
+        if isempty(x_path_all{it})
+            continue;
+        end
+
+        ci = color_index(q_trace(it), qmin, qmax, size(cmap, 1));
+        plot3(x_path_all{it}, y_path_all{it}, z_path_all{it}, ...
+            'Color', cmap(ci,:), 'LineWidth', 0.8);
+    end
+
+    markerStyles = {'o', 's', 'd', '^', 'v'};
+    for ip = 1:numel(z_projection_planes)
+        [xs, ys, ~, ~, qs] = sample_flux_tubes_at_z( ...
+            x_path_all, y_path_all, z_path_all, q_trace, z_projection_planes(ip));
+
+        if isempty(xs)
+            continue;
+        end
+
+        markerStyle = markerStyles{min(ip, numel(markerStyles))};
+        scatter3(xs, ys, z_projection_planes(ip) * ones(size(xs)), ...
+            18, qs, markerStyle, 'filled', ...
+            'MarkerEdgeColor', 'k', 'LineWidth', 0.15);
+    end
+
+    colormap(cmap);
+    if qmax > qmin
+        caxis([qmin qmax]);
+    else
+        dq = max(abs(qmin), 1) * 1e-6;
+        caxis([qmin-dq qmax+dq]);
+    end
+
+    cb = colorbar;
+    ylabel(cb, 'q_{source} [W/m^2]');
+
+    xlabel('x [m]');
+    ylabel('y [m]');
+    zlabel('z [m]');
+    title('3D flux tubes carrying window-derived heat flux');
+
+    axis equal;
+    view(-35, 22);
+    camlight headlight;
+    lighting gouraud;
+
+    rView = max([geom.rView, max(abs([cellfun(@max_abs_or_zero, x_path_all); ...
+                                      cellfun(@max_abs_or_zero, y_path_all)]))]);
+    if ~isfinite(rView) || rView <= 0
+        rView = 0.25;
+    end
+
+    xlim(rView * [-1 1]);
+    ylim(rView * [-1 1]);
+    zlim([min(z_projection_planes) max(z_projection_planes)]);
+
+    text(0.055, 0, z_source, ' source', ...
+        'Color', [0.2 0.2 0.2], 'FontWeight', 'bold');
+    text(0.055, 0, z_target, ' target', ...
+        'Color', [0 0 0.75], 'FontWeight', 'bold');
+
+    plot_mpex_flux_tubes_RZ( ...
+        x_path_all, y_path_all, z_path_all, q_trace, ...
+        z_projection_planes, z_projection_labels, coilGeometryFile);
+end
+
+function plot_mpex_flux_tubes_RZ( ...
+    x_path_all, y_path_all, z_path_all, q_trace, ...
+    z_projection_planes, z_projection_labels, coilGeometryFile)
+
+    if isempty(x_path_all) || isempty(q_trace) || ~any(isfinite(q_trace))
+        return;
+    end
+
+    geom = load_mpex_plot_geometry(coilGeometryFile);
+    cmap = get_heat_colormap(256);
+    qmin = min(q_trace(:), [], 'omitnan');
+    qmax = max(q_trace(:), [], 'omitnan');
+
+    figure('Color','w','Position',[80 80 1550 850]);
+    hold on;
+    grid on;
+    box on;
+
+    plot_mpex_device_RZ(geom, z_projection_planes, z_projection_labels);
+
+    for it = 1:numel(z_path_all)
+        if isempty(z_path_all{it})
+            continue;
+        end
+
+        ci = color_index(q_trace(it), qmin, qmax, size(cmap, 1));
+        rpath = hypot(x_path_all{it}, y_path_all{it});
+
+        plot(z_path_all{it}, rpath, ...
+            'Color', cmap(ci,:), ...
+            'LineWidth', 0.55, ...
+            'HandleVisibility', 'off');
+        plot(z_path_all{it}, -rpath, ...
+            'Color', cmap(ci,:), ...
+            'LineWidth', 0.55, ...
+            'HandleVisibility', 'off');
+    end
+
+    markerStyles = {'o', 's', 'd', '^', 'v'};
+    for ip = 1:numel(z_projection_planes)
+        [~, ~, rs, ~, qs] = sample_flux_tubes_at_z( ...
+            x_path_all, y_path_all, z_path_all, q_trace, z_projection_planes(ip));
+
+        if isempty(rs)
+            continue;
+        end
+
+        markerStyle = markerStyles{min(ip, numel(markerStyles))};
+        scatter(z_projection_planes(ip) * ones(size(rs)), rs, ...
+            26, qs, markerStyle, 'filled', ...
+            'MarkerEdgeColor', 'k', ...
+            'DisplayName', z_projection_labels{ip});
+        scatter(z_projection_planes(ip) * ones(size(rs)), -rs, ...
+            26, qs, markerStyle, 'filled', ...
+            'MarkerEdgeColor', 'k', ...
+            'HandleVisibility', 'off');
+    end
+
+    colormap(cmap);
+    if qmax > qmin
+        caxis([qmin qmax]);
+    end
+
+    xlabel('z [m]');
+    ylabel('r [m]');
+    title('MPEX geometry with traced flux-tube field lines');
+    xlim([min(z_projection_planes) max(z_projection_planes)]);
+    ylim(1.05 * geom.rView * [-1 1]);
+
+    cb = colorbar;
+    ylabel(cb, 'q_{source} [W/m^2]');
+    legend('Location','bestoutside');
+end
+
+function geom = plot_mpex_device_3D(coilGeometryFile, z_projection_planes, z_projection_labels)
+
+    geom = load_mpex_plot_geometry(coilGeometryFile);
+
+    plot_vessel_profile_3D(geom.vessel_z, geom.vessel_r, [0.35 0.35 0.35], 0.055);
+    plot_annular_band_3D(geom.helicon_z, geom.helicon_r_inner, geom.helicon_r_outer, ...
+        [0 0 1], 0.30);
+    plot_annular_band_3D(geom.limiter_z, geom.limiter_r_inner, geom.limiter_r_outer, ...
+        [0 0.65 0], 0.32);
+    plot_annular_band_3D(geom.skimmer_z, geom.skimmer_r_inner, geom.skimmer_r_outer, ...
+        [0 0 0], 0.18);
+
+    plot_coils_3D_from_geometry(geom);
+    plot_mpex_projection_planes_3D(geom, z_projection_planes, z_projection_labels);
+end
+
+function geom = load_mpex_plot_geometry(coilGeometryFile)
+
+    coilTable = [];
+    if exist(coilGeometryFile, 'file')
+        try
+            coilTable = readtable(coilGeometryFile);
+        catch ME
+            warning('Could not read %s for MPEX plot geometry: %s', coilGeometryFile, ME.message);
+        end
+    end
+
+    geom = build_mpex_plot_geometry(coilTable);
+end
+
+function geom = build_mpex_plot_geometry(coilTable)
+
+    default_z = [0.9881; 1.2981; 1.6282; 1.8642; 2.1902; 2.3882; ...
+                 2.9442; 3.1092; 3.3887; 3.5919; 3.7824; 3.9729; 4.2904];
+    default_dz = 0.0979 * ones(size(default_z));
+    default_r_inner = 0.1221 * ones(size(default_z));
+    default_r_outer = 0.1785 * ones(size(default_z));
+    default_ps = {'PS1'; 'TR1'; 'PS3'; 'PS3'; 'X'; 'PS1'; ...
+                  'TR2'; 'TR2'; 'PS2'; 'PS2'; 'PS2'; 'PS2'; 'PS2'};
+
+    useDefault = true;
+
+    if ~isempty(coilTable)
+        names = coilTable.Properties.VariableNames;
+        requiredNames = {'z', 'dz', 'r_inner', 'r_outer', 'ps'};
+        if all(ismember(requiredNames, names))
+            useDefault = false;
+            geom.coil_z = double(coilTable.z(:));
+            geom.coil_dz = double(coilTable.dz(:));
+            geom.coil_r_inner = double(coilTable.r_inner(:));
+            geom.coil_r_outer = double(coilTable.r_outer(:));
+            geom.coil_ps = cell(numel(geom.coil_z), 1);
+
+            for j = 1:numel(geom.coil_z)
+                geom.coil_ps{j} = table_value_as_text(coilTable.ps(j));
+            end
+        end
+    end
+
+    if useDefault
+        geom.coil_z = default_z;
+        geom.coil_dz = default_dz;
+        geom.coil_r_inner = default_r_inner;
+        geom.coil_r_outer = default_r_outer;
+        geom.coil_ps = default_ps;
+    end
+
+    in2m = 0.0254;
+
+    geom.rDump = 15.75 * in2m / 2;
+    geom.zDump = 0.5;
+    geom.rTarget = 0.045;
+
+    zCC1 = geom.coil_z(6) + 0.5 * geom.coil_dz(6);
+    zCC2 = geom.coil_z(7) - 0.5 * geom.coil_dz(7);
+    rCC  = 24 * in2m / 2;
+
+    geom.rVac1 = 5.834 * in2m / 2;
+    geom.rVac2 = 19.25 * in2m / 2;
+    geom.rVac3 = 4.272 * in2m;
+    zVac3 = geom.coil_z(end) + 0.5 * geom.coil_dz(end);
+
+    L_window = 11.8 * in2m;
+    geom.helicon_r_inner = 4.95 * in2m / 2;
+    geom.helicon_r_outer = geom.rVac1;
+    z1 = 0.5 * (geom.coil_z(3) + geom.coil_z(4)) - L_window / 2;
+    z2 = 0.5 * (geom.coil_z(3) + geom.coil_z(4)) + L_window / 2;
+    geom.helicon_z = [z1 z2];
+
+    limiterLength = 30e-2;
+    limiterWidth = 3e-3;
+    z1 = geom.helicon_z(2) + 1e-2;
+    z2 = z1 + limiterLength;
+    geom.limiter_r_inner = 2.5 * in2m - limiterWidth;
+    geom.limiter_r_outer = geom.rVac1;
+    geom.limiter_z = [z1 z2];
+
+    geom.skimmer_r_inner = 0.07 / 2;
+    geom.skimmer_r_outer = geom.rVac1;
+    z1 = geom.coil_z(5) + 0.0702 - 0.5e-2;
+    z2 = geom.coil_z(5) + 0.0702 + 0.5e-2;
+    geom.skimmer_z = [z1 z2];
+
+    geom.vessel_z = [geom.zDump, geom.zDump, geom.zDump+0.2, geom.zDump+0.2, ...
+                     zCC1, zCC1, zCC2, zCC2, zVac3];
+    geom.vessel_r = [0, geom.rDump, geom.rDump, geom.rVac1, ...
+                     geom.rVac1, rCC, rCC, geom.rVac3, geom.rVac3];
+
+    geom.rView = max([geom.rDump, rCC, geom.coil_r_outer(:).']);
+end
+
+function plot_vessel_profile_3D(zTop, rTop, colorSpec, alphaVal)
+
+    theta = linspace(0, 2*pi, 180);
+
+    for k = 1:numel(zTop)-1
+        z1 = zTop(k);
+        z2 = zTop(k+1);
+        R1 = rTop(k);
+        R2 = rTop(k+1);
+
+        if max(abs([R1 R2])) < 1e-12
+            continue;
+        end
+
+        [TH, TT] = meshgrid(theta, linspace(0, 1, 18));
+        ZZ = z1 + TT * (z2 - z1);
+        RR = R1 + TT * (R2 - R1);
+
+        surf(RR .* cos(TH), RR .* sin(TH), ZZ, ...
+            'FaceColor', colorSpec, ...
+            'FaceAlpha', alphaVal, ...
+            'EdgeColor', 'none');
+
+        if R1 > 1e-12
+            plot3(R1*cos(theta), R1*sin(theta), z1*ones(size(theta)), ...
+                'Color', colorSpec, 'LineWidth', 1.2);
+        end
+        if R2 > 1e-12
+            plot3(R2*cos(theta), R2*sin(theta), z2*ones(size(theta)), ...
+                'Color', colorSpec, 'LineWidth', 1.2);
+        end
+    end
+end
+
+function plot_annular_band_3D(zSpan, Rin, Rout, colorSpec, alphaVal)
+
+    theta = linspace(0, 2*pi, 150);
+    plot_annular_cylinder_3D(Rin, Rout, zSpan(1), zSpan(2), theta, colorSpec, alphaVal);
+    plot_coil_edges_3D(Rin, Rout, zSpan(1), zSpan(2), theta, colorSpec);
+end
+
+function plot_mpex_projection_planes_3D(geom, z_projection_planes, z_projection_labels)
+
+    for ip = 1:numel(z_projection_planes)
+        label = z_projection_labels{ip};
+        labelLower = lower(label);
+
+        if ~isempty(strfind(labelLower, 'dump')) %#ok<STREMP>
+            R = geom.rDump;
+            c = [1 0 0];
+        elseif ~isempty(strfind(labelLower, 'helicon')) %#ok<STREMP>
+            R = geom.rVac1;
+            c = [0 0 1];
+        elseif ~isempty(strfind(labelLower, 'target')) %#ok<STREMP>
+            R = geom.rTarget;
+            c = [0 0 0.75];
+        else
+            R = geom.rVac1;
+            c = [0.15 0.15 0.15];
+        end
+
+        plot_plane_grid_3D(z_projection_planes(ip), R, c, label);
+    end
+end
+
+function plot_mpex_device_RZ(geom, z_projection_planes, z_projection_labels)
+
+    plot_vessel_profile_RZ(geom.vessel_z, geom.vessel_r, [0.2 0.2 0.2], 2.0);
+    plot_annular_band_RZ(geom.helicon_z, geom.helicon_r_inner, geom.helicon_r_outer, ...
+        [0 0 1], 0.28);
+    plot_annular_band_RZ(geom.limiter_z, geom.limiter_r_inner, geom.limiter_r_outer, ...
+        [0 0.65 0], 0.28);
+    plot_annular_band_RZ(geom.skimmer_z, geom.skimmer_r_inner, geom.skimmer_r_outer, ...
+        [0 0 0], 0.18);
+    plot_coils_RZ_from_geometry(geom);
+
+    yline(0, 'k:', 'HandleVisibility', 'off');
+
+    for ip = 1:numel(z_projection_planes)
+        label = z_projection_labels{ip};
+        labelLower = lower(label);
+        if ~isempty(strfind(labelLower, 'dump')) %#ok<STREMP>
+            c = [1 0 0];
+        elseif ~isempty(strfind(labelLower, 'helicon')) %#ok<STREMP>
+            c = [0 0 1];
+        elseif ~isempty(strfind(labelLower, 'target')) %#ok<STREMP>
+            c = [0 0 0.75];
+        else
+            c = [0.15 0.15 0.15];
+        end
+
+        xline(z_projection_planes(ip), '--', label, ...
+            'Color', c, 'LineWidth', 1.4, 'HandleVisibility', 'off');
+    end
+end
+
+function plot_vessel_profile_RZ(zTop, rTop, colorSpec, lineWidth)
+
+    plot(zTop, rTop, ...
+        'Color', colorSpec, ...
+        'LineWidth', lineWidth, ...
+        'HandleVisibility', 'off');
+    plot(zTop, -rTop, ...
+        'Color', colorSpec, ...
+        'LineWidth', lineWidth, ...
+        'HandleVisibility', 'off');
+end
+
+function plot_annular_band_RZ(zSpan, Rin, Rout, colorSpec, alphaVal)
+
+    patch([zSpan(1) zSpan(2) zSpan(2) zSpan(1)], ...
+          [Rin Rin Rout Rout], colorSpec, ...
+          'FaceAlpha', alphaVal, ...
+          'EdgeColor', colorSpec, ...
+          'LineWidth', 1.0, ...
+          'HandleVisibility', 'off');
+    patch([zSpan(1) zSpan(2) zSpan(2) zSpan(1)], ...
+          [-Rin -Rin -Rout -Rout], colorSpec, ...
+          'FaceAlpha', alphaVal, ...
+          'EdgeColor', colorSpec, ...
+          'LineWidth', 1.0, ...
+          'HandleVisibility', 'off');
+end
+
+function plot_coils_RZ_from_geometry(geom)
+
+    for j = 1:numel(geom.coil_z)
+        z1 = geom.coil_z(j) - 0.5 * geom.coil_dz(j);
+        dZ = geom.coil_dz(j);
+        dR = geom.coil_r_outer(j) - geom.coil_r_inner(j);
+        c = coil_color_mpex(geom.coil_ps{j});
+
+        rectangle('Position', [z1, geom.coil_r_inner(j), dZ, dR], ...
+            'FaceColor', c, ...
+            'EdgeColor', c, ...
+            'LineWidth', 0.8, ...
+            'HandleVisibility', 'off');
+        rectangle('Position', [z1, -geom.coil_r_outer(j), dZ, dR], ...
+            'FaceColor', c, ...
+            'EdgeColor', c, ...
+            'LineWidth', 0.8, ...
+            'HandleVisibility', 'off');
+    end
+end
+
+function plot_plane_grid_3D(z0, Rmax, colorSpec, label)
+
+    theta = linspace(0, 2*pi, 160);
+
+    for rr = linspace(0, Rmax, 6)
+        plot3(rr*cos(theta), rr*sin(theta), z0*ones(size(theta)), ...
+            'Color', colorSpec, 'LineWidth', 0.8);
+    end
+
+    for th = linspace(0, 2*pi, 12)
+        plot3([0 Rmax*cos(th)], [0 Rmax*sin(th)], [z0 z0], ...
+            'Color', colorSpec, 'LineWidth', 0.45);
+    end
+
+    text(0.72*Rmax, 0, z0, sprintf(' %s', label), ...
+        'Color', colorSpec, 'FontWeight', 'bold');
+end
+
+function plot_coils_3D_from_geometry(geom)
+
+    theta = linspace(0, 2*pi, 90);
+
+    for j = 1:numel(geom.coil_z)
+        z1 = geom.coil_z(j) - 0.5 * geom.coil_dz(j);
+        z2 = geom.coil_z(j) + 0.5 * geom.coil_dz(j);
+        c = coil_color_mpex(geom.coil_ps{j});
+
+        plot_annular_cylinder_3D(geom.coil_r_inner(j), geom.coil_r_outer(j), ...
+            z1, z2, theta, c, 0.28);
+        plot_coil_edges_3D(geom.coil_r_inner(j), geom.coil_r_outer(j), ...
+            z1, z2, theta, c);
+    end
+end
+
+function plot_annular_cylinder_3D(Rin, Rout, z1, z2, theta, faceColor, alphaVal)
+
+    [TH, ZZ] = meshgrid(theta, [z1 z2]);
+
+    Xo = Rout * cos(TH);
+    Yo = Rout * sin(TH);
+    Xi = Rin * cos(TH);
+    Yi = Rin * sin(TH);
+
+    surf(Xo, Yo, ZZ, ...
+        'FaceColor', faceColor, 'EdgeColor', 'none', 'FaceAlpha', alphaVal);
+    surf(Xi, Yi, ZZ, ...
+        'FaceColor', faceColor, 'EdgeColor', 'none', 'FaceAlpha', alphaVal);
+
+    [TH2, RR] = meshgrid(theta, [Rin Rout]);
+
+    Xcap = RR .* cos(TH2);
+    Ycap = RR .* sin(TH2);
+
+    surf(Xcap, Ycap, z1*ones(size(Xcap)), ...
+        'FaceColor', faceColor, 'EdgeColor', 'none', 'FaceAlpha', alphaVal);
+    surf(Xcap, Ycap, z2*ones(size(Xcap)), ...
+        'FaceColor', faceColor, 'EdgeColor', 'none', 'FaceAlpha', alphaVal);
+end
+
+function plot_coil_edges_3D(Rin, Rout, z1, z2, theta, colorSpec)
+
+    for R = [Rin Rout]
+        plot3(R*cos(theta), R*sin(theta), z1*ones(size(theta)), ...
+            'Color', colorSpec, 'LineWidth', 0.75);
+        plot3(R*cos(theta), R*sin(theta), z2*ones(size(theta)), ...
+            'Color', colorSpec, 'LineWidth', 0.75);
+    end
+
+    for th = linspace(0, 2*pi, 12)
+        plot3([Rin Rout]*cos(th), [Rin Rout]*sin(th), [z1 z1], ...
+            'Color', colorSpec, 'LineWidth', 0.45);
+        plot3([Rin Rout]*cos(th), [Rin Rout]*sin(th), [z2 z2], ...
+            'Color', colorSpec, 'LineWidth', 0.45);
+    end
+end
+
+function [xs, ys, rs, ths, qs] = sample_flux_tubes_at_z( ...
+    x_path_all, y_path_all, z_path_all, q_trace, zslice)
+
+    xs = [];
+    ys = [];
+    rs = [];
+    ths = [];
+    qs = [];
+
+    for it = 1:numel(z_path_all)
+        zpath = z_path_all{it};
+
+        if isempty(zpath)
+            continue;
+        end
+
+        zmin = min(zpath);
+        zmax = max(zpath);
+
+        if zslice < zmin || zslice > zmax
+            continue;
+        end
+
+        xpath = x_path_all{it};
+        ypath = y_path_all{it};
+
+        xq = interp1(zpath, xpath, zslice, 'linear');
+        yq = interp1(zpath, ypath, zslice, 'linear');
+
+        if ~isfinite(xq) || ~isfinite(yq)
+            continue;
+        end
+
+        rq = hypot(xq, yq);
+        thq = mod(atan2d(yq, xq), 360);
+
+        xs(end+1,1) = xq; %#ok<AGROW>
+        ys(end+1,1) = yq; %#ok<AGROW>
+        rs(end+1,1) = rq; %#ok<AGROW>
+        ths(end+1,1) = thq; %#ok<AGROW>
+        qs(end+1,1) = q_trace(it); %#ok<AGROW>
+    end
+end
+
+function ci = color_index(value, vmin, vmax, nColor)
+
+    if ~isfinite(value) || vmax <= vmin
+        ci = 1;
+    else
+        ci = round(1 + (nColor-1) * (value-vmin) / (vmax-vmin));
+        ci = max(1, min(nColor, ci));
+    end
+end
+
+function cmap = get_heat_colormap(nColor)
+
+    if exist('turbo', 'file') || exist('turbo', 'builtin')
+        cmap = turbo(nColor);
+    else
+        cmap = parula(nColor);
+    end
+end
+
+function c = coil_color_mpex(psValue)
+
+    psString = upper(strtrim(table_value_as_text(psValue)));
+
+    if strcmp(psString, 'PS1')
+        c = [0.9 0 0];
+    elseif strcmp(psString, 'PS2')
+        c = [0.75 0 0.75];
+    elseif strcmp(psString, 'PS3')
+        c = [0 0.65 0.9];
+    elseif strcmp(psString, 'TR1')
+        c = [0 0 1];
+    elseif strcmp(psString, 'TR2')
+        c = [0 0.65 0];
+    else
+        c = [0.62 0.62 0.62];
+    end
+end
+
+function txt = table_value_as_text(value)
+
+    if iscell(value)
+        value = value{1};
+    end
+
+    if ischar(value)
+        txt = value;
+    elseif isnumeric(value)
+        txt = num2str(value);
+    else
+        txt = char(value);
+    end
+
+    if isempty(txt)
+        txt = '';
+    end
+end
+
+function value = max_abs_or_zero(x)
+
+    if isempty(x)
+        value = 0;
+    else
+        value = max(abs(x(:)));
+        if ~isfinite(value)
+            value = 0;
+        end
+    end
+end
+
+function [x_grid, y_grid, q_map, q_lm, hit_ok, x_hit_lm, y_hit_lm] = rasterize_centerline_projection_heat_map( ...
+    R_LM, THETA_LM_DEG, z_source, z_plane, FBr, FBt, FBz, r_grid, z_grid, ...
+    dz_trace, nStepsMax, stop_if_outside_grid, q_center_lm, nX, nY, pad)
+
+    [nL, nM] = size(R_LM);
+    nPatches = nL * nM;
+
+    x_hit_vec = NaN(nPatches, 1);
+    y_hit_vec = NaN(nPatches, 1);
+    q_vec = q_center_lm(:);
+
+    R_vec = R_LM(:);
+    THETA_vec = THETA_LM_DEG(:);
+
+    parfor ii = 1:nPatches
+        if ~isfinite(q_vec(ii)) || ~isfinite(R_vec(ii)) || ~isfinite(THETA_vec(ii))
+            continue;
+        end
+
+        [ok, xhit, yhit] = trace_point_to_target( ...
+            R_vec(ii), THETA_vec(ii), z_source, FBr, FBt, FBz, ...
+            r_grid, z_grid, z_plane, dz_trace, nStepsMax, stop_if_outside_grid);
+
+        if ok
+            x_hit_vec(ii) = xhit;
+            y_hit_vec(ii) = yhit;
+        end
+    end
+
+    x_hit_lm = reshape(x_hit_vec, nL, nM);
+    y_hit_lm = reshape(y_hit_vec, nL, nM);
+    q_lm = NaN(nL, nM);
+    hit_ok = isfinite(x_hit_lm) & isfinite(y_hit_lm) & isfinite(q_center_lm);
+    q_lm(hit_ok) = q_center_lm(hit_ok);
+
+    valid = isfinite(x_hit_vec) & isfinite(y_hit_vec) & isfinite(q_vec);
+
+    if nnz(valid) < 3
+        x_grid = linspace(-pad, pad, nX);
+        y_grid = linspace(-pad, pad, nY);
+        q_map = NaN(nY, nX);
+        return;
+    end
+
+    xv = x_hit_vec(valid);
+    yv = y_hit_vec(valid);
+    qv = q_vec(valid);
+
+    x_grid = linspace(min(xv)-pad, max(xv)+pad, nX);
+    y_grid = linspace(min(yv)-pad, max(yv)+pad, nY);
+    [XG, YG] = meshgrid(x_grid, y_grid);
+
+    q_map = griddata(xv, yv, qv, XG, YG, 'linear');
+    q_nearest = griddata(xv, yv, qv, XG, YG, 'nearest');
+
+    rHit = hypot(xv, yv);
+    rGrid = hypot(XG, YG);
+    rMin = max(0, min(rHit) - pad);
+    rMax = max(rHit) + pad;
+    footprintMask = rGrid >= rMin & rGrid <= rMax;
+
+    fillMask = footprintMask & ~isfinite(q_map);
+    q_map(fillMask) = q_nearest(fillMask);
+    q_map(~footprintMask) = NaN;
+end
+
+function [x_plane_c, y_plane_c, z_plane_c, patch_ok_plane, fail_corner_plane] = trace_patch_corners_to_plane( ...
+    xsrc_c, ysrc_c, zsrc_c, z_plane, FBr, FBt, FBz, r_grid, z_grid, dz_trace, nStepsMax, stop_if_outside_grid)
+
+    [nL, nM, ~] = size(xsrc_c);
+    nPatches = nL * nM;
+
+    x_plane_c = NaN(nL, nM, 4);
+    y_plane_c = NaN(nL, nM, 4);
+    z_plane_c = NaN(nL, nM, 4);
+    patch_ok_plane = false(nL, nM);
+    fail_corner_plane = NaN(nL, nM);
+
+    x_plane_flat = NaN(nPatches, 4);
+    y_plane_flat = NaN(nPatches, 4);
+    z_plane_flat = NaN(nPatches, 4);
+    fail_flat = NaN(nPatches, 1);
+
+    xsrc_flat = reshape(xsrc_c, nPatches, 4);
+    ysrc_flat = reshape(ysrc_c, nPatches, 4);
+    zsrc_flat = reshape(zsrc_c, nPatches, 4);
+
+    parfor ii = 1:nPatches
+        ok_all = true;
+        xhit_row = NaN(1, 4);
+        yhit_row = NaN(1, 4);
+        zhit_row = NaN(1, 4);
+        fc = NaN;
+
+        for ic = 1:4
+            rc  = hypot(xsrc_flat(ii,ic), ysrc_flat(ii,ic));
+            thc = mod(atan2d(ysrc_flat(ii,ic), xsrc_flat(ii,ic)), 360);
+            zc  = zsrc_flat(ii,ic);
+
+            [ok, xhit, yhit, zhit] = trace_point_to_target( ...
+                rc, thc, zc, FBr, FBt, FBz, r_grid, z_grid, z_plane, ...
+                dz_trace, nStepsMax, stop_if_outside_grid);
+
+            if ~ok
+                ok_all = false;
+                fc = ic;
+                break;
+            end
+
+            xhit_row(ic) = xhit;
+            yhit_row(ic) = yhit;
+            zhit_row(ic) = zhit;
+        end
+
+        if ok_all
+            x_plane_flat(ii,:) = xhit_row;
+            y_plane_flat(ii,:) = yhit_row;
+            z_plane_flat(ii,:) = zhit_row;
+        else
+            fail_flat(ii) = fc;
+        end
+    end
+
+    for ii = 1:nPatches
+        [il, im] = ind2sub([nL, nM], ii);
+        if all(isfinite(x_plane_flat(ii,:)))
+            x_plane_c(il,im,:) = x_plane_flat(ii,:);
+            y_plane_c(il,im,:) = y_plane_flat(ii,:);
+            z_plane_c(il,im,:) = z_plane_flat(ii,:);
+            patch_ok_plane(il,im) = true;
+        else
+            fail_corner_plane(il,im) = fail_flat(ii);
+        end
+    end
+end
+
+function [A_plane_lm, q_plane_lm] = compute_plane_heat_flux_lm( ...
+    x_plane_c, y_plane_c, patch_ok_plane, P_tube_lm)
+
+    [nL, nM, ~] = size(x_plane_c);
+    A_plane_lm = NaN(nL, nM);
+    q_plane_lm = NaN(nL, nM);
+
+    for il = 1:nL
+        for im = 1:nM
+            if ~patch_ok_plane(il,im) || ~isfinite(P_tube_lm(il,im))
+                continue;
+            end
+
+            xv = squeeze(x_plane_c(il,im,:));
+            yv = squeeze(y_plane_c(il,im,:));
+
+            if any(~isfinite(xv)) || any(~isfinite(yv))
+                continue;
+            end
+
+            A_poly = polygon_area_xy(xv, yv);
+            if A_poly < 1e-12
+                continue;
+            end
+
+            A_plane_lm(il,im) = A_poly;
+            q_plane_lm(il,im) = P_tube_lm(il,im) / A_poly;
+        end
+    end
+end
+
+function [x_grid, y_grid, q_map, q_count] = rasterize_plane_heat_flux_map( ...
+    x_plane_c, y_plane_c, patch_ok_plane, q_plane_lm, nX, nY, pad)
+
+    finiteX = x_plane_c(isfinite(x_plane_c));
+    finiteY = y_plane_c(isfinite(y_plane_c));
+
+    if isempty(finiteX) || isempty(finiteY)
+        x_grid = linspace(-pad, pad, nX);
+        y_grid = linspace(-pad, pad, nY);
+        q_map = NaN(nY, nX);
+        q_count = zeros(nY, nX);
+        return;
+    end
+
+    x_grid = linspace(min(finiteX)-pad, max(finiteX)+pad, nX);
+    y_grid = linspace(min(finiteY)-pad, max(finiteY)+pad, nY);
+    [XG, YG] = meshgrid(x_grid, y_grid);
+
+    q_sum = zeros(nY, nX);
+    q_count = zeros(nY, nX);
+
+    [nL, nM, ~] = size(x_plane_c);
+    for il = 1:nL
+        for im = 1:nM
+            if ~patch_ok_plane(il,im) || ~isfinite(q_plane_lm(il,im))
+                continue;
+            end
+
+            xv = squeeze(x_plane_c(il,im,:));
+            yv = squeeze(y_plane_c(il,im,:));
+
+            in = inpolygon(XG, YG, xv, yv);
+            q_sum(in) = q_sum(in) + q_plane_lm(il,im);
+            q_count(in) = q_count(in) + 1;
+        end
+    end
+
+    q_map = NaN(nY, nX);
+    mask = q_count > 0;
+    q_map(mask) = q_sum(mask) ./ q_count(mask);
+end
+
+function A_poly = polygon_area_xy(xv, yv)
+    nv = numel(xv);
+    A_poly = 0;
+
+    for kv = 1:nv
+        kn = mod(kv, nv) + 1;
+        A_poly = A_poly + xv(kv)*yv(kn) - xv(kn)*yv(kv);
+    end
+
+    A_poly = 0.5 * abs(A_poly);
 end
